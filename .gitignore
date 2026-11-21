@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Wrangler / local dev state
+.wrangler/
+.dev.vars*
+.env*
+
+# Generated
+worker-configuration.d.ts
+coverage/
+
+# Editors
+.idea/

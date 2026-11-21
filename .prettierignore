@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+coverage/
+worker-configuration.d.ts
+package-lock.json
+.idea/
+
+# Hand-formatted prose (compact tables)
+docs/
+HANDOFF.md
