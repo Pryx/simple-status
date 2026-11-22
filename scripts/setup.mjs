@@ -415,42 +415,57 @@ if (providers.length > 0) {
   );
 }
 
+// Who may sign in is a reusable Access policy ("simple-status admins"), attached to the
+// admin's application. (Earlier versions of this setup made it part of the application,
+// which Cloudflare now shows as "legacy"; it's replaced here.)
+const POLICY_NAME = "simple-status admins";
 const apps = await cf("GET", `/accounts/${account}/access/apps`);
 let app = apps.find(
   (a) => a.domain === adminDomain || a.self_hosted_domains?.includes(adminDomain),
 );
+const reusable = (await cf("GET", `/accounts/${account}/access/policies`)) ?? [];
+let policy = reusable.find((p) => p.name === POLICY_NAME);
+const legacy = (app?.policies ?? []).find(
+  (p) => p.name === POLICY_NAME && p.id !== policy?.id && p.reusable !== true,
+);
+
 // A new application needs its admins: ask again if they were left empty.
-if (!app && admins.length === 0) {
+if (!app && !policy && admins.length === 0) {
   admins = parseEmails(await askOnce("Emails of the admins who may sign in, comma-separated"));
 }
-const emailRules = admins.map((email) => ({ email: { email } }));
+// Who's in: the emails given, or else whoever the legacy policy let in.
+const include = admins.length > 0 ? admins.map((email) => ({ email: { email } })) : legacy?.include;
 
-if (app) {
-  step(`Access: the application for ${adminDomain} exists.`);
-  if (emailRules.length > 0) {
-    const policyName = "simple-status admins";
-    const policy = (app.policies ?? []).find((p) => p.name === policyName);
-    if (policy) {
-      step(`Access: setting who may sign in: ${admins.join(", ")}.`);
-      await write(() =>
-        cf("PUT", `/accounts/${account}/access/apps/${app.id}/policies/${policy.id}`, {
-          name: policyName,
-          decision: "allow",
-          include: emailRules,
-        }),
-      );
-    } else {
-      step(
-        `Access: the application has its own policies; leaving them. Admins: edit them in Zero Trust.`,
-      );
-    }
-  }
+if (policy && admins.length > 0) {
+  step(`Access: setting who may sign in: ${admins.join(", ")}.`);
+  await write(() =>
+    cf("PUT", `/accounts/${account}/access/policies/${policy.id}`, {
+      name: POLICY_NAME,
+      decision: "allow",
+      include,
+    }),
+  );
+} else if (!policy && include?.length) {
+  step(
+    `Access: creating the policy "${POLICY_NAME}"` +
+      (admins.length ? ` for ${admins.join(", ")}.` : ", with the admins of the legacy one."),
+  );
+  policy = (await write(() =>
+    cf("POST", `/accounts/${account}/access/policies`, {
+      name: POLICY_NAME,
+      decision: "allow",
+      include,
+    }),
+  )) ?? { id: "(new policy)" };
+} else if (!policy) {
+  console.error("\nTo set up who may sign in, name the admins: --admins a@example.com");
+  process.exit(1);
 } else {
-  if (emailRules.length === 0) {
-    console.error("\nTo create the Access application, name the admins: --admins a@example.com");
-    process.exit(1);
-  }
-  step(`Access: creating the application for ${adminDomain}, for ${admins.join(", ")}.`);
+  step(`Access: the policy "${POLICY_NAME}" exists; its admins stay.`);
+}
+
+if (!app) {
+  step(`Access: creating the application for ${adminDomain}.`);
   app = await write(() =>
     cf("POST", `/accounts/${account}/access/apps`, {
       name: `${siteName} admin`,
@@ -458,11 +473,37 @@ if (app) {
       type: "self_hosted",
       session_duration: "24h",
       app_launcher_visible: false,
-      policies: [
-        { name: "simple-status admins", decision: "allow", include: emailRules, precedence: 1 },
-      ],
+      policies: [{ id: policy.id, precedence: 1 }],
     }),
   );
+} else if (!(app.policies ?? []).some((p) => p.id === policy.id)) {
+  step(
+    `Access: attaching the policy to the application` +
+      (legacy ? ", in place of the legacy one." : "."),
+  );
+  // Its other policies stay, after ours.
+  const others = (app.policies ?? [])
+    .filter((p) => p.id !== legacy?.id)
+    .map((p, i) => ({ id: p.id, precedence: i + 2 }));
+  await write(() =>
+    cf("PUT", `/accounts/${account}/access/apps/${app.id}`, {
+      name: app.name,
+      domain: app.domain,
+      type: app.type,
+      session_duration: app.session_duration,
+      app_launcher_visible: app.app_launcher_visible,
+      policies: [{ id: policy.id, precedence: 1 }, ...others],
+    }),
+  );
+  if (legacy) {
+    await write(() =>
+      cf("DELETE", `/accounts/${account}/access/apps/${app.id}/policies/${legacy.id}`).catch(
+        () => undefined, // Gone with the update already.
+      ),
+    );
+  }
+} else {
+  step(`Access: the application for ${adminDomain} uses the policy.`);
 }
 
 // 5. Tables and Worker

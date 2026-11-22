@@ -83,8 +83,8 @@ Applications.
 **Adding or removing admins:** whoever Access lets in is an admin. Either run the
 setup again with the complete list (`--admins` replaces it):
 `CLOUDFLARE_API_TOKEN=… npm run setup -- --admins a@example.com,b@example.com`. Or in
-the dashboard: Zero Trust → Access → Applications → your "… admin" application →
-Policies → "simple-status admins" → add or remove emails in the Include rule → Save.
+the dashboard: Zero Trust → Access → Policies → "simple-status admins" → add or
+remove emails in the Include rule → Save.
 
 **Afterwards:** `npx wrangler login` once, then `npm run deploy` for updates. (The
 first deploy has to be the setup's: it's the one that sets the two Access secrets.)

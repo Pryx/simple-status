@@ -1407,3 +1407,11 @@ legend {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* Narrow screens: an incident's labels go on a row of their own, under the title. */
+@media (max-width: 40rem) {
+  .incident > header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
