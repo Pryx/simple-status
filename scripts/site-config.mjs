@@ -9,6 +9,7 @@
 //   node scripts/site-config.mjs && npx wrangler deploy -c wrangler.site.json
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { imageSize } from "image-size";
 
 const BASE = "wrangler.jsonc";
 const SITE = "wrangler.site.jsonc";
@@ -62,6 +63,27 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const base = parseJsonc(readFileSync(BASE, "utf8"));
   const site = existsSync(SITE) ? parseJsonc(readFileSync(SITE, "utf8")) : {};
   const config = merge(base, site);
+  // The logo's size, so its width and height go into the page and nothing jumps while
+  // it loads. Files are under public/, like SITE_LOGO itself.
+  for (const [logo, sizeVar] of [
+    ["SITE_LOGO", "SITE_LOGO_SIZE"],
+    ["SITE_LOGO_DARK", "SITE_LOGO_DARK_SIZE"],
+  ]) {
+    const path = (config.vars?.[logo] ?? "").trim().replace(/^\/+/, "");
+    if (!path) continue;
+    const file = `public/${path}`;
+    if (!existsSync(file)) {
+      console.error(`${logo}: ${file} doesn't exist.`);
+      process.exitCode = 1;
+      continue;
+    }
+    try {
+      const { width, height } = imageSize(readFileSync(file));
+      config.vars[sizeVar] = `${width}x${height}`;
+    } catch {
+      console.error(`${logo}: couldn't read the size of ${file}; it may shift while loading.`);
+    }
+  }
   // The generated file sits next to wrangler.jsonc, so relative paths still work.
   config.$schema = "node_modules/wrangler/config-schema.json";
   writeFileSync(OUT, `${JSON.stringify(config, null, 2)}\n`);

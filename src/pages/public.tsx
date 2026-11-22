@@ -21,7 +21,15 @@ const CSP = [
 export interface SiteInfo {
   name: string;
   /** Paths of the logo, and of a version for dark mode, under public/. */
-  logo?: { light: string; dark?: string | undefined } | undefined;
+  logo?:
+    | {
+        light: string;
+        dark?: string | undefined;
+        /** Pixel sizes, so the page keeps the logo's space before it loads. */
+        lightSize?: [number, number] | undefined;
+        darkSize?: [number, number] | undefined;
+      }
+    | undefined;
   now: string;
   services: Service[];
 }
@@ -67,8 +75,22 @@ function TopBar(props: { site: SiteInfo }) {
         {/* Decorative next to the name, so no text alternative. */}
         {logo && (
           <>
-            <img class={logo.dark ? "logo logo-light" : "logo"} src={`/${logo.light}`} alt="" />
-            {logo.dark && <img class="logo logo-dark" src={`/${logo.dark}`} alt="" />}
+            <img
+              class={logo.dark ? "logo logo-light" : "logo"}
+              src={`/${logo.light}`}
+              width={logo.lightSize?.[0]}
+              height={logo.lightSize?.[1]}
+              alt=""
+            />
+            {logo.dark && (
+              <img
+                class="logo logo-dark"
+                src={`/${logo.dark}`}
+                width={logo.darkSize?.[0]}
+                height={logo.darkSize?.[1]}
+                alt=""
+              />
+            )}
           </>
         )}
         {name}

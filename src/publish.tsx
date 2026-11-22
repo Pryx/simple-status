@@ -29,11 +29,22 @@ export const PUBLIC_ASSETS = ["static/style.css", "static/app.js", "static/site.
 /** A file under public/, as configured: "static/logo.svg" (a leading slash is allowed). */
 const assetPath = (path: string) => path.trim().replace(/^\/+/, "");
 
-/** The logo from SITE_LOGO (and SITE_LOGO_DARK), if one is set. */
+/** "200x40" → [200, 40]. */
+function parseSize(value: string): [number, number] | undefined {
+  const match = /^(\d+)x(\d+)$/.exec(value.trim());
+  return match ? [Number(match[1]), Number(match[2])] : undefined;
+}
+
+/** The logo from SITE_LOGO (and SITE_LOGO_DARK), with sizes, if one is set. */
 export function logoOf(env: Env): SiteInfo["logo"] {
   const light = assetPath(env.SITE_LOGO);
   if (!light) return undefined;
-  return { light, dark: assetPath(env.SITE_LOGO_DARK) || undefined };
+  return {
+    light,
+    lightSize: parseSize(env.SITE_LOGO_SIZE),
+    dark: assetPath(env.SITE_LOGO_DARK) || undefined,
+    darkSize: parseSize(env.SITE_LOGO_DARK_SIZE),
+  };
 }
 
 // Edges keep a copy for 30 s; browsers check back every time (and usually get a 304).

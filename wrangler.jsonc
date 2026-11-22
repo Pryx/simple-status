@@ -54,6 +54,9 @@
     // dark mode. Both are copied to the site.
     "SITE_LOGO": "",
     "SITE_LOGO_DARK": "",
+    // Filled in by npm run site-config from the files, as "200x40"; leave them empty.
+    "SITE_LOGO_SIZE": "",
+    "SITE_LOGO_DARK_SIZE": "",
     // The public site's URL, for absolute links in the Atom feed, e.g.
     // "https://status.example.com". Optional.
     "SITE_URL": "",

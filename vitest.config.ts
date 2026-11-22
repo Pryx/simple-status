@@ -22,6 +22,8 @@ export default defineConfig({
           SITE_URL: "",
           SITE_LOGO: "",
           SITE_LOGO_DARK: "",
+          SITE_LOGO_SIZE: "",
+          SITE_LOGO_DARK_SIZE: "",
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
         },
       },

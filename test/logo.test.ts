@@ -36,6 +36,12 @@ describe("site name and logo", () => {
     );
   });
 
+  it("gives the logo its size, so the name doesn't move while it loads", () => {
+    expect(render({ logo: { light: "site/logo.webp", lightSize: [250, 50] } })).toContain(
+      '<img class="logo" src="/site/logo.webp" width="250" height="50" alt=""/>',
+    );
+  });
+
   it("shows the version for the theme when there is a dark one", () => {
     const html = render({ logo: { light: "static/logo.svg", dark: "static/logo-dark.svg" } });
     expect(html).toContain('<img class="logo logo-light" src="/static/logo.svg"');
