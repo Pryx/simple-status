@@ -19,3 +19,8 @@ coverage/
 import*.sql
 v2-*.sql
 *.mysql.sql
+
+# Your own site: settings merged over wrangler.jsonc, and files such as the logo
+wrangler.site.jsonc
+wrangler.site.json
+public/site/

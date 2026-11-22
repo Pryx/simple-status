@@ -29,9 +29,9 @@ describe("site name and logo", () => {
     expect(render({})).toContain('<a class="site-name" href="/">Acme status</a>');
   });
 
-  it("shows the logo instead, with the name as its text alternative", () => {
+  it("shows the logo before the name", () => {
     expect(render({ logo: { light: "static/logo.svg" } })).toContain(
-      '<a class="site-name" href="/"><img class="logo" src="/static/logo.svg" alt="Acme status"/></a>',
+      '<a class="site-name" href="/"><img class="logo" src="/static/logo.svg" alt=""/>Acme status</a>',
     );
   });
 

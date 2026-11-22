@@ -67,14 +67,14 @@ function TopBar(props: { site: SiteInfo }) {
   return (
     <div class="topbar wrap">
       <a class="site-name" href="/">
-        {logo ? (
+        {/* Decorative next to the name, so no text alternative. */}
+        {logo && (
           <>
-            <img class={logo.dark ? "logo logo-light" : "logo"} src={`/${logo.light}`} alt={name} />
-            {logo.dark && <img class="logo logo-dark" src={`/${logo.dark}`} alt={name} />}
+            <img class={logo.dark ? "logo logo-light" : "logo"} src={`/${logo.light}`} alt="" />
+            {logo.dark && <img class="logo logo-dark" src={`/${logo.dark}`} alt="" />}
           </>
-        ) : (
-          name
         )}
+        {name}
       </a>
       <ThemeToggle />
     </div>

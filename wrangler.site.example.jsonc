@@ -1,0 +1,17 @@
+// Your site's settings, merged over wrangler.jsonc by `npm run deploy` (see README).
+// Copy this to wrangler.site.jsonc, which stays out of the repository, and fill it in.
+// Only list what differs from wrangler.jsonc.
+{
+  "d1_databases": [
+    // From `npx wrangler d1 create simple-status`.
+    { "binding": "DB", "database_id": "00000000-0000-0000-0000-000000000000" },
+  ],
+  "routes": [{ "pattern": "admin.status.example.com", "custom_domain": true }],
+  "vars": {
+    "SITE_NAME": "Example status",
+    "SITE_URL": "https://status.example.com",
+    // Files under public/site/, which also stays out of the repository.
+    "SITE_LOGO": "",
+    "SITE_LOGO_DARK": "",
+  },
+}

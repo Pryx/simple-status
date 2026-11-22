@@ -6,8 +6,11 @@
   "observability": {
     "enabled": true,
   },
+  // Defaults for every site. Put your own settings (database id, routes, name, logo) in
+  // wrangler.site.jsonc, which `npm run deploy` merges over this file; see README.
+  //
   // The Worker serves the admin only, on a hostname behind Cloudflare Access. Add it in
-  // your own config (see README), e.g.
+  // wrangler.site.jsonc, e.g.
   //   "routes": [{ "pattern": "admin.status.example.com", "custom_domain": true }]
   // No other hostname should reach the Worker.
   "workers_dev": false,
@@ -41,8 +44,9 @@
   "vars": {
     // Shown at the top of the public pages, in titles and in the feed.
     "SITE_NAME": "Status",
-    // Optional: a logo shown instead of the name, as a file under public/, e.g.
-    // "static/logo.svg", and a version for dark mode. Both are copied to the site.
+    // Optional: a logo shown before the name, as a file under public/, e.g.
+    // "site/logo.svg" (public/site/ stays out of the repository), and a version for
+    // dark mode. Both are copied to the site.
     "SITE_LOGO": "",
     "SITE_LOGO_DARK": "",
     // The public site's URL, for absolute links in the Atom feed, e.g.

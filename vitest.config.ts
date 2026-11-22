@@ -15,7 +15,15 @@ export default defineConfig({
     cloudflareTest(async () => ({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        bindings: { ...secrets, TEST_MIGRATIONS: await readD1Migrations("./migrations") },
+        bindings: {
+          ...secrets,
+          // Fixed, whatever the site's own wrangler.jsonc says.
+          SITE_NAME: "Status",
+          SITE_URL: "",
+          SITE_LOGO: "",
+          SITE_LOGO_DARK: "",
+          TEST_MIGRATIONS: await readD1Migrations("./migrations"),
+        },
       },
     })),
   ],

@@ -4,18 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "dev": "npm run site-config && wrangler dev -c wrangler.site.json",
+    "deploy": "npm run site-config && wrangler d1 migrations apply DB --remote -c wrangler.site.json && wrangler deploy -c wrangler.site.json",
     "cf-typegen": "wrangler types",
-    "db:migrate": "wrangler d1 migrations apply DB --local",
-    "demo:setup": "wrangler d1 migrations apply DB --local --persist-to .wrangler/demo && wrangler d1 execute DB --local --persist-to .wrangler/demo --file=fixtures/demo.sql",
-    "demo": "wrangler dev --persist-to .wrangler/demo",
+    "db:migrate": "npm run site-config && wrangler d1 migrations apply DB --local -c wrangler.site.json",
+    "demo:setup": "npm run site-config && wrangler d1 migrations apply DB --local --persist-to .wrangler/demo -c wrangler.site.json && wrangler d1 execute DB --local --persist-to .wrangler/demo --file=fixtures/demo.sql -c wrangler.site.json",
+    "demo": "npm run site-config && wrangler dev --persist-to .wrangler/demo -c wrangler.site.json",
     "typecheck": "wrangler types && tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "site-config": "node scripts/site-config.mjs"
   },
   "dependencies": {
     "hono": "^4.13.19",

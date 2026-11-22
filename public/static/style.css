@@ -1252,8 +1252,14 @@ legend {
   line-height: 1;
 }
 
-/* A logo instead of the site name (SITE_LOGO). With a dark version (SITE_LOGO_DARK),
+/* A logo before the site name (SITE_LOGO). With a dark version (SITE_LOGO_DARK),
    the one that fits the theme is shown. */
+.topbar .site-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .logo {
   display: block;
   height: 2rem;

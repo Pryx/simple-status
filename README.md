@@ -131,13 +131,21 @@ R2), `src/feed.ts`, `src/access.ts` (Access JWT check), `src/pages/` (HTML),
 Deploy from your own machine or CI, not from the devcontainer sandbox. Its firewall
 blocks the Cloudflare API on purpose, and it should never hold a Cloudflare token.
 
+**Your settings stay out of the repository**, like `.env.local` in other projects:
+`wrangler.jsonc` holds the defaults, and `wrangler.site.jsonc` (ignored by git) holds
+yours: database id, admin hostname, name, logo. `npm run deploy` merges the two into
+`wrangler.site.json` and deploys with that. Start from the example:
+`cp wrangler.site.example.jsonc wrangler.site.jsonc`. For other Wrangler commands on
+your site, run `npm run site-config` once, then add `-c wrangler.site.json`, as below.
+The local commands (`npm run dev`, `db:migrate`, `demo`) use your settings too.
+
 You need a domain on Cloudflare. The examples use `status.example.com` for the public
 site and `admin.status.example.com` for the admin. Cloudflare's dashboard changes
 from time to time, so check the linked docs if a step doesn't match.
 
 1. `npx wrangler login`
-2. **Database:** `npx wrangler d1 create simple-status`, then add the printed
-   `database_id` to the `d1_databases` entry in `wrangler.jsonc`.
+2. **Database:** `npx wrangler d1 create simple-status`, then put the printed
+   `database_id` in `wrangler.site.jsonc`.
 3. **Bucket:** `npx wrangler r2 bucket create simple-status-site`. (Enabling R2 may
    ask for a payment method, even though this stays within the free tier.)
 4. **Public hostname**, in the Cloudflare dashboard:
@@ -153,23 +161,25 @@ from time to time, so check the linked docs if a step doesn't match.
      `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`.
    - CORS for the JSON API and feed:
      `npx wrangler r2 bucket cors set simple-status-site --file r2-cors.json`.
-5. **Admin hostname:** add it to `wrangler.jsonc`:
+5. **Admin hostname:** add it to `wrangler.site.jsonc`:
    `"routes": [{ "pattern": "admin.status.example.com", "custom_domain": true }]`.
    The `workers.dev` and preview URLs are switched off, so this is the only way in.
 6. **Access:** in Cloudflare Zero Trust, create a self-hosted Access application for
    all of `admin.status.example.com`, with a policy for who may sign in.
-7. Set `SITE_NAME` (shown at the top of the page), optionally a logo to show instead
-   (`SITE_LOGO`, plus `SITE_LOGO_DARK` for dark mode: files you add under `public/`,
-   e.g. `static/logo.svg`), and `SITE_URL` (`https://status.example.com`, for the feed), in
-   `wrangler.jsonc`.
-8. Set the two secrets:
-   - `npx wrangler secret put ACCESS_TEAM_DOMAIN`: for example `myteam.cloudflareaccess.com`.
-   - `npx wrangler secret put ACCESS_AUD`: the application's "Application Audience (AUD) Tag".
+7. In `wrangler.site.jsonc`, set `SITE_NAME` (shown at the top of the page),
+   optionally a logo to show next to it (`SITE_LOGO`, plus `SITE_LOGO_DARK` for dark
+   mode: files under `public/site/`, which git ignores, e.g. `site/logo.svg`), and
+   `SITE_URL` (`https://status.example.com`, for the feed).
+8. `npm run site-config`, then set the two secrets:
+   - `npx wrangler secret put ACCESS_TEAM_DOMAIN -c wrangler.site.json`: for example
+     `myteam.cloudflareaccess.com`.
+   - `npx wrangler secret put ACCESS_AUD -c wrangler.site.json`: the application's
+     "Application Audience (AUD) Tag".
 9. `npm run deploy`. This applies pending migrations, then deploys. Within a minute
    the cron job publishes the whole site (or use **Republish site** on the dashboard).
 
 Until both secrets are set, the admin answers 503. Back up the database with
-`npx wrangler d1 export simple-status --remote --output backup.sql`; D1's Time Travel
+`npx wrangler d1 export simple-status --remote --output backup.sql -c wrangler.site.json`; D1's Time Travel
 can also restore it to an earlier point (the last 7 days on the free plan).
 
 **Free-tier use:** the cron job runs 1,440 times a day plus your admin use, far below
@@ -182,8 +192,9 @@ To empty a database but keep its tables, for example before importing again:
 
 ```sh
 npx wrangler d1 execute DB --local --file=scripts/wipe.sql     # local
-npx wrangler d1 export simple-status --remote --output backup.sql   # production: back up first
-npx wrangler d1 execute DB --remote --file=scripts/wipe.sql    # production
+npm run site-config                                            # production: your settings
+npx wrangler d1 export simple-status --remote --output backup.sql -c wrangler.site.json
+npx wrangler d1 execute DB --remote --file=scripts/wipe.sql -c wrangler.site.json
 ```
 
 Locally you can also delete everything, including the local copy of the published
@@ -203,7 +214,7 @@ with the same ids overwrites them.
 mysqldump --no-tablespaces -u USER -p DATABASE > v2.dump.sql   # on the v2 server
 node scripts/import-v2.mjs v2.dump.sql > import.sql             # prints a report
 npx wrangler d1 execute DB --local --file=import.sql            # try it locally first
-npx wrangler d1 execute DB --remote --file=import.sql           # then the real one
+npm run site-config && npx wrangler d1 execute DB --remote --file=import.sql -c wrangler.site.json
 ```
 
 Import into an empty database (see [Starting over](#starting-over) to empty one). The
