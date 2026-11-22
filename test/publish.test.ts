@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
+import * as db from "../src/db";
 import { enqueueAll, peekQueue } from "../src/db";
-import { scheduledPublish } from "../src/publish";
+import { publishQueued, scheduledPublish } from "../src/publish";
 import {
   admin,
   get,
@@ -141,31 +142,48 @@ describe("history by month", () => {
 });
 
 describe("publishing progress", () => {
-  it("is reported by the API and on the dashboard", async () => {
+  it("is reported by the API and on the dashboard, and each check publishes a few", async () => {
     const s = await createService();
-    for (const month of ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"]) {
-      await pastIncident(s.id, month);
-    }
-    await admin("POST", "/publish", {});
-    const progress = await (
-      await admin("GET", "/publish")
-    ).json<{
-      queued: number;
-      total: number;
-    }>();
-    expect(progress.queued).toBeGreaterThan(0);
-    // All pages (home, assets, 5 months, 5 incidents), some published already.
-    expect(progress.total).toBe(12);
+    for (let m = 1; m <= 9; m++) await pastIncident(s.id, `2026-0${String(m)}`);
+    await admin("POST", "/publish", {}); // All 20 pages queued; 8 published now.
+    expect(await db.queueLength(env.DB)).toBe(12);
 
+    // The dashboard shows the progress so far.
     const html = await (await get("/admin")).text();
-    expect(html).toContain(`${String(progress.queued)} pages left, about a minute`);
-    expect(html).toContain(`aria-valuemax="12" aria-valuenow="${String(12 - progress.queued)}"`);
+    expect(html).toContain("12 pages left, about a minute");
+    expect(html).toContain('aria-valuemax="20" aria-valuenow="8"');
 
-    await runCron();
-    expect(await (await admin("GET", "/publish")).json()).toEqual({ queued: 0, total: 0 });
+    // Each check publishes 5 more.
+    const check = async () =>
+      (await admin("GET", "/publish")).json<{ queued: number; total: number }>();
+    expect(await check()).toEqual({ queued: 7, total: 20 });
+    expect(await check()).toEqual({ queued: 2, total: 20 });
+    expect(await check()).toEqual({ queued: 0, total: 0 });
     expect(await (await get("/admin")).text()).toMatch(
       /class="card publish-status"[^>]* hidden=""/,
     );
+  });
+
+  it("keeps what a run published even if the run is stopped part-way", async () => {
+    const s = await createService();
+    for (let m = 1; m <= 3; m++) await pastIncident(s.id, `2026-0${String(m)}`);
+    await env.DB.prepare("DELETE FROM publish_queue").run();
+    await db.enqueueAll(env.DB, new Date().toISOString()); // home, assets, 3 months, 3 incidents
+    // A run that stops (hangs, as if cut off) after the home page and the assets.
+    const put = env.SITE.put.bind(env.SITE);
+    let writes = 0;
+    env.SITE.put = ((...args: Parameters<R2Bucket["put"]>) =>
+      ++writes > 10 ? new Promise(() => undefined) : put(...args)) as R2Bucket["put"];
+    try {
+      await Promise.race([
+        publishQueued(env, 25),
+        new Promise((resolve) => setTimeout(resolve, 300)),
+      ]);
+    } finally {
+      env.SITE.put = put;
+    }
+    const left = (await peekQueue(env.DB, 100)).map((e) => e.key.split(":")[0]);
+    expect(left).toEqual(["month", "month", "month", "incident", "incident", "incident"]);
   });
 });
 

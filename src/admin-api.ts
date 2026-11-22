@@ -3,7 +3,14 @@ import { bodyLimit } from "hono/body-limit";
 import * as db from "./db";
 import { renderMarkdown } from "./markdown";
 import { notFound, ProblemError, validate } from "./problem";
-import { incidentJson, pagesOf, republish, scheduledPublish } from "./publish";
+import {
+  incidentJson,
+  pagesOf,
+  PUBLISH_PER_CHECK,
+  publishQueued,
+  republish,
+  scheduledPublish,
+} from "./publish";
 import { isLocalhost } from "./local";
 import { incidentInput, markdownPreview, serviceInput, serviceOrder, updateInput } from "./schemas";
 import { stateOf } from "./status";
@@ -258,11 +265,14 @@ export const adminApi = new Hono<AppEnv>()
   // Publishing and previews
 
   /**
-   * How many pages are waiting to be published. Locally there is no cron job, so each
-   * check (the dashboard's progress bar polls it) publishes a batch first.
+   * How many pages are waiting to be published. Each check (the dashboard's progress
+   * bar polls it every 5 s) also publishes a few, in its own request: so publishing goes
+   * faster while someone watches, and doesn't depend on the cron job alone. Locally
+   * there is no cron job, so it does the cron job's work instead.
    */
   .get("/publish", async (c) => {
     if (isLocalhost(c.req.url)) await scheduledPublish(c.env);
+    else await publishQueued(c.env, PUBLISH_PER_CHECK);
     return c.json(await db.queueProgress(c.env.DB));
   })
   /** Re-renders the whole public site. */

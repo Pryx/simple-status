@@ -18,6 +18,8 @@ import { serviceStatuses, stateOf, worst } from "./status";
 
 /** Pages published within an admin request; the cron job does the rest. */
 export const PUBLISH_NOW = 8;
+/** Pages published by each progress check of the dashboard (every 5 s while it's open). */
+export const PUBLISH_PER_CHECK = 5;
 /** Pages per cron run. Small, to stay well within the free plan's CPU time. */
 export const PUBLISH_PER_RUN = 25;
 
@@ -227,16 +229,16 @@ export async function publishQueued(env: Env, limit: number): Promise<number> {
   if (entries.length === 0) return 0;
   const services: Service[] = await db.listServices(env.DB);
   const publisher = new Publisher(env, { name: env.SITE_NAME, logo: logoOf(env), now, services });
-  const done: db.QueueEntry[] = [];
   for (const entry of entries) {
     try {
       await publisher.publish(entry.key);
-      done.push(entry);
+      // Off the queue right away: if the run is stopped (the free plan allows little CPU
+      // time per run), what it published so far stays done.
+      await db.dequeue(env.DB, [entry]);
     } catch (err) {
       console.error(`Publishing ${entry.key} failed:`, err);
     }
   }
-  await db.dequeue(env.DB, done);
   return db.queueLength(env.DB);
 }
 
