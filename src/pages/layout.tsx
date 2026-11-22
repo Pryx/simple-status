@@ -1,10 +1,13 @@
 import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
+import { type Status, STATUS_LABELS } from "../status";
 
 export function Layout(props: {
   title: string;
   siteName: string;
   script: string;
+  /** Extra elements for <head>. */
+  head?: Child;
   children: Child;
 }) {
   return (
@@ -14,11 +17,12 @@ export function Layout(props: {
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
+          {props.head}
           <title>
             {props.title === props.siteName ? props.title : `${props.title} · ${props.siteName}`}
           </title>
           {/* Not deferred: applies the saved theme before the first paint. */}
-          <script src="/static/theme.js" />
+          <script src="/static/site.js" />
           <link rel="stylesheet" href="/static/style.css" />
           <script src={props.script} defer />
         </head>
@@ -61,4 +65,16 @@ export function ThemeToggle() {
 /** A UTC time, shown relative and in the viewer's time zone once the script runs. */
 export function Time(props: { iso: string }) {
   return <time datetime={props.iso}>{props.iso.slice(0, 16).replace("T", " ")} UTC</time>;
+}
+
+/**
+ * A status label in its colour. `live` (something going on now) adds a softly pulsing
+ * dot, so it's clear at a glance what is happening right now.
+ */
+export function StatusBadge(props: { status: Status; live?: boolean }) {
+  return (
+    <span class={`chip impact status-${props.status}${props.live ? " live" : ""}`}>
+      {STATUS_LABELS[props.status]}
+    </span>
+  );
 }

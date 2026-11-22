@@ -3,10 +3,10 @@ import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 import { requireAccess } from "./access";
 import { adminApi } from "./admin-api";
-import { api } from "./api";
 import { adminPages } from "./pages/admin";
-import { publicPages } from "./pages/public";
 import { problem, ProblemError } from "./problem";
+import { isLocalhost } from "./local";
+import { scheduledPublish, siteKey } from "./publish";
 import type { AppEnv } from "./types";
 
 const app = new Hono<AppEnv>();
@@ -29,23 +29,33 @@ app.use(
   }),
 );
 
-// Nothing is cached: every response is rendered from D1, so it is always current.
+// Admin responses are never cached.
 app.use(async (c, next) => {
   await next();
   c.header("Cache-Control", "no-store");
 });
 
-const isApi = (path: string) =>
-  path === "/api" || path.startsWith("/api/") || path.startsWith("/admin/api/");
+const isApi = (path: string) => path.startsWith("/admin/api/");
 
-// Everything under /admin, including unknown paths, needs Access.
-app.use("/admin", requireAccess);
-app.use("/admin/*", requireAccess);
+// The Worker only serves admins: every path needs Access, including the preview below.
+app.use(requireAccess);
 
-app.route("/api/v1", api);
 app.route("/admin/api/v1", adminApi);
 app.route("/admin", adminPages);
-app.route("/", publicPages);
+
+/**
+ * A preview of the published site, read from the bucket. The public serves the same
+ * files from the bucket's own hostname, without the Worker. In local development
+ * there is no cron job, so the preview runs its work first.
+ */
+app.get("*", async (c) => {
+  if (isLocalhost(c.req.url)) await scheduledPublish(c.env);
+  const object = await c.env.SITE.get(siteKey(c.req.path));
+  if (!object) return c.notFound();
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  return new Response(object.body, { headers });
+});
 
 app.notFound((c) => {
   if (isApi(c.req.path)) return problem(c, { title: "Not Found", status: 404 });
@@ -66,4 +76,9 @@ app.onError((err, c) => {
   return c.text("Internal Server Error", 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(_controller, env) {
+    await scheduledPublish(env);
+  },
+} satisfies ExportedHandler<Env>;

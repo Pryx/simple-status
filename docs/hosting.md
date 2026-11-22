@@ -10,8 +10,8 @@ surface to attack as possible.
 > Free-tier limits change often. Every number below needs checking against the
 > provider's current terms before we commit to them.
 
-> **First version:** only the Worker, D1 and Access are used, with no caching.
-> Email, Turnstile and the Cron Trigger below come in later, together with
+> **First version:** the Worker (admin only), D1, R2 (the public site as static files),
+> a Cron Trigger and Access. Email and Turnstile come in later, together with
 > subscriptions. See [plan.md](plan.md).
 
 ## Why serverless suits a status page
@@ -55,20 +55,23 @@ flowchart LR
 
 ### Request handling
 
-- **Public pages and API** are rendered from D1 on every request. A Worker runs for
-  every request even when it uses the edge cache, so caching would only save D1
-  reads. Those are tiny for a status page and well within the free quota.
-  Rendering every request means writes and time-based changes (maintenance windows
-  starting or ending) are always reflected immediately, with no purge logic.
-- **Caching, if ever needed:** cache the public responses and purge them on writes.
-  Because maintenance windows change status without any write, that cache would
-  then also need a short TTL, or a Cron Trigger that purges it when a window starts
-  or ends.
+- **The public site never runs the Worker.** Every request to a Worker counts against
+  the free plan's daily request limit, and a status page gets most of its traffic
+  exactly when something is broken: a few thousand visitors with the page open, each
+  refreshing every minute, would use up the day's quota within an hour. So the public
+  pages, the JSON API and the Atom feed are static files in an R2 bucket, served
+  from Cloudflare's cache on the public hostname. Traffic to them is free and
+  unlimited, and they stay up even if the Worker or D1 has trouble.
+- **Writes publish.** An admin write queues the pages it affects (`publish_queue`)
+  and renders the first few in the same request. A Cron Trigger every minute
+  renders the rest, re-renders incidents that started or ended on their own
+  (maintenance windows), and re-renders everything after a deploy. Edges keep pages
+  for 30 seconds (`s-maxage=30`), so a change is visible within about half a minute.
 - **Admin and subscriber routes** are never cached.
 - **Notifications:** posting an incident writes rows to an `outbox` table in the
   same transaction. The cron handler claims rows atomically
   (`UPDATE … SET claimed_at … RETURNING`), sends them, and retries with a bounded
-  backoff. This fixes M3 and M4 from the v2 security review (not published; see HANDOFF.md) by design.
+  backoff. This fixes M3 and M4 from the v2 security review (kept private) by design.
 
 ## Admin authentication
 
@@ -113,7 +116,7 @@ Not a goal. These notes apply only if we decide to build a v2 importer.
 | Area | Impact |
 | --- | --- |
 | **PHP shared hosting** | Dropped. |
-| Data migration | Users without shell access need a path. Plan: a single-file **`export.php`** for v2 (upload it, open it with a one-time key, download JSON, delete it) and an importer in the v3 admin UI or CLI. It also accepts a `mysqldump`. MySQL is converted to SQLite: Unix ints stay as they are, HTML-escaped values are unescaped once (B17), and names are fixed. |
+| Data migration | **Done:** `scripts/import-v2.mjs` converts a `mysqldump` into SQL for D1 (see the README). HTML-escaped values are unescaped once (B17), and outage end times are derived from the posts that superseded them. Users without shell access would still need a way to get a dump (e.g. phpMyAdmin's export). |
 | Staff accounts | Imported without passwords. Each user is invited to sign in with Access or a passkey. Optionally, the legacy `sha256(pass . salt)` hash can be verified once through WebCrypto. |
 | Subscribers | Imported with their tokens, so links in emails already sent keep working. |
 | Legacy URLs | All of them can be routed by the Worker (`/index.php?do=manage…`, `/api/status.php`, `/telegram_check.php`, `/admin/`) once the domain points at the new deployment. |

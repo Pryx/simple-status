@@ -1,0 +1,641 @@
+openapi: 3.1.0
+info:
+  title: simple-status API
+  version: "1"
+  description: |
+    The status page's API, in two parts:
+
+    - **Public** (`/api/v1/...` on the public hostname): static JSON files published by the
+      Worker, served from Cloudflare's cache. Read-only, no auth, any origin (CORS).
+      Static files take no query parameters, so past incidents are paged by month:
+      each page links to the next older one.
+    - **Admin** (`/admin/api/v1/...` on the admin hostname): behind Cloudflare Access.
+      Writes take `application/json` only and refuse other origins. Errors are
+      `application/problem+json` (RFC 9457).
+
+    Times are ISO 8601. Output is always UTC with milliseconds; input may use any offset.
+    Changes appear in the public files within about 30 seconds (edge cache).
+  license:
+    name: See the repository
+
+servers:
+  - url: https://status.example.com
+    description: Public site (replace with yours)
+
+tags:
+  - name: Public
+  - name: Admin
+
+paths:
+  /api/v1/summary:
+    get:
+      tags: [Public]
+      summary: Summary in one request
+      description: Overall status, services with their status, and active and scheduled incidents.
+      operationId: getSummary
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Summary" }
+  /api/v1/services:
+    get:
+      tags: [Public]
+      summary: Services with their status, in display order
+      operationId: listServices
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [services]
+                properties:
+                  services:
+                    type: array
+                    items: { $ref: "#/components/schemas/ServiceWithStatus" }
+  /api/v1/incidents/active:
+    get:
+      tags: [Public]
+      summary: Incidents going on now
+      operationId: listActiveIncidents
+      responses:
+        "200":
+          description: OK, oldest start first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidentList" }
+  /api/v1/incidents/scheduled:
+    get:
+      tags: [Public]
+      summary: Upcoming incidents and maintenance
+      operationId: listScheduledIncidents
+      responses:
+        "200":
+          description: OK, soonest first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidentList" }
+  /api/v1/incidents/past:
+    get:
+      tags: [Public]
+      summary: First page of past incidents
+      description: The latest month with ended incidents. Same as that month's own page.
+      operationId: getPastIncidents
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PastPage" }
+  /api/v1/incidents/past/{month}:
+    get:
+      tags: [Public]
+      summary: Past incidents that started in a month
+      description: |
+        Ended incidents that started in `month` (UTC), newest first. Only months with
+        incidents exist; follow `next` rather than counting months.
+      operationId: getPastIncidentsInMonth
+      parameters:
+        - name: month
+          in: path
+          required: true
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}$", examples: ["2026-11"] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PastPage" }
+        "404":
+          description: No ended incidents started that month
+  /api/v1/incidents/{id}:
+    get:
+      tags: [Public]
+      summary: One incident
+      operationId: getIncident
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+        "404":
+          description: No such incident
+  /feed.atom:
+    get:
+      tags: [Public]
+      summary: Atom feed of the most recently changed incidents
+      operationId: getFeed
+      responses:
+        "200":
+          description: OK
+          content:
+            application/atom+xml:
+              schema: { type: string }
+
+  /admin/api/v1/services:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    post:
+      tags: [Admin]
+      summary: Create a service
+      description: New services go last unless `position` is given.
+      operationId: createService
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        default: { $ref: "#/components/responses/Problem" }
+  /admin/api/v1/services/order:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    put:
+      tags: [Admin]
+      summary: Reorder the services
+      operationId: reorderServices
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ids]
+              properties:
+                ids:
+                  description: Every service id exactly once, in the new order.
+                  type: array
+                  items: { type: string }
+      responses:
+        "204": { description: Reordered }
+        default: { $ref: "#/components/responses/Problem" }
+  /admin/api/v1/services/{id}:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Admin]
+      summary: Update a service
+      description: Any of the fields; the rest stay.
+      operationId: updateService
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServicePatch" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [Admin]
+      summary: Delete a service
+      description: Refused with 409 while incidents refer to it.
+      operationId: deleteService
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /admin/api/v1/incidents:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    post:
+      tags: [Admin]
+      summary: Create an incident or maintenance
+      operationId: createIncident
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IncidentInput" }
+      responses:
+        "201":
+          description: Created
+          headers:
+            Location:
+              description: The incident's public JSON.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+        default: { $ref: "#/components/responses/Problem" }
+  /admin/api/v1/incidents/{id}:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    parameters:
+      - $ref: "#/components/parameters/IncidentId"
+    patch:
+      tags: [Admin]
+      summary: Update an incident
+      description: |
+        Any of the fields; the result is validated as a whole. Changing maintenance into
+        an outage drops a planned end that is still in the future. To end an incident,
+        post an `ended` update.
+      operationId: updateIncident
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IncidentPatch" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [Admin]
+      summary: Delete an incident and its updates
+      operationId: deleteIncident
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Problem" }
+  /admin/api/v1/incidents/{id}/updates:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    parameters:
+      - $ref: "#/components/parameters/IncidentId"
+    post:
+      tags: [Admin]
+      summary: Post a status update
+      description: |
+        `ended` ends the incident now (if it is active) and may have an empty message.
+        It is refused (422) before the incident starts: delete or reschedule it instead.
+        Other statuses need a message and leave the times alone.
+      operationId: postUpdate
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateInput" }
+      responses:
+        "201":
+          description: Posted; returns the incident.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+        default: { $ref: "#/components/responses/Problem" }
+  /admin/api/v1/incidents/{id}/updates/{updateId}:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    parameters:
+      - $ref: "#/components/parameters/IncidentId"
+      - name: updateId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Admin]
+      summary: Delete an update
+      description: Deleting an outage's only `ended` update reopens the outage.
+      operationId: deleteUpdate
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /admin/api/v1/publish:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    post:
+      tags: [Admin]
+      summary: Re-render the whole public site
+      operationId: republish
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        "202":
+          description: Queued; the first pages are published already, the cron job does the rest.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queued]
+                properties:
+                  queued: { type: integer, description: Pages still waiting. }
+        default: { $ref: "#/components/responses/Problem" }
+  /admin/api/v1/preview:
+    servers:
+      - url: https://admin.status.example.com
+        description: Admin (replace with yours)
+    post:
+      tags: [Admin]
+      summary: Render Markdown as the public site will
+      operationId: previewMarkdown
+      security:
+        - accessClientId: []
+          accessClientSecret: []
+        - accessJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 20000 }
+      responses:
+        "200":
+          description: Rendered
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [html]
+                properties:
+                  html: { type: string }
+        default: { $ref: "#/components/responses/Problem" }
+
+components:
+  securitySchemes:
+    accessClientId:
+      type: apiKey
+      in: header
+      name: CF-Access-Client-Id
+      description: An Access service token's client id (for scripts), sent with its secret.
+    accessClientSecret:
+      type: apiKey
+      in: header
+      name: CF-Access-Client-Secret
+    accessJwt:
+      type: apiKey
+      in: header
+      name: Cf-Access-Jwt-Assertion
+      description: Set by Cloudflare Access for signed-in users; browsers don't send it themselves.
+
+  parameters:
+    IncidentId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Problem:
+      description: |
+        An error: 400 (malformed JSON), 401 (no valid Access token), 403 (cross-origin),
+        404, 409 (service in use), 413 (body over 64 KiB), 415 (not JSON),
+        422 (validation, see `errors`), 503 (Access not configured).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Timestamp:
+      type: string
+      format: date-time
+      examples: ["2026-11-22T10:00:00.000Z"]
+    Impact:
+      type: string
+      enum: [maintenance, minor_outage, major_outage]
+    Status:
+      description: A service's status, or the overall status (the worst of them).
+      type: string
+      enum: [operational, maintenance, minor_outage, major_outage]
+    State:
+      description: Follows from the times. upcoming before starts_at; ended once ends_at has passed.
+      type: string
+      enum: [upcoming, active, ended]
+    UpdateStatus:
+      type: string
+      enum: [identified, monitoring, update, ended]
+
+    Service:
+      type: object
+      required: [id, name, description, position, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        position: { type: integer }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    ServiceWithStatus:
+      allOf:
+        - $ref: "#/components/schemas/Service"
+        - type: object
+          required: [status]
+          properties:
+            status: { $ref: "#/components/schemas/Status" }
+
+    IncidentUpdate:
+      type: object
+      required: [id, status, body, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/UpdateStatus" }
+        body: { type: string, description: Markdown. Empty only for `ended`. }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    Incident:
+      type: object
+      required:
+        [id, title, body, impact, starts_at, ends_at, service_ids, updates, created_at, updated_at, state]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: string, description: The description, in Markdown. }
+        impact: { $ref: "#/components/schemas/Impact" }
+        starts_at: { $ref: "#/components/schemas/Timestamp" }
+        ends_at:
+          description: Null while an outage is ongoing. Maintenance always has one.
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+        service_ids:
+          type: array
+          items: { type: string, format: uuid }
+        updates:
+          description: Newest first.
+          type: array
+          items: { $ref: "#/components/schemas/IncidentUpdate" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+        state:
+          $ref: "#/components/schemas/State"
+          description: At the time the file was published.
+    IncidentList:
+      type: object
+      required: [incidents]
+      properties:
+        incidents:
+          type: array
+          items: { $ref: "#/components/schemas/Incident" }
+    Summary:
+      type: object
+      required: [status, services, incidents, generated_at]
+      properties:
+        status: { $ref: "#/components/schemas/Status" }
+        services:
+          type: array
+          items: { $ref: "#/components/schemas/ServiceWithStatus" }
+        incidents:
+          description: Active and scheduled incidents, by start time.
+          type: array
+          items: { $ref: "#/components/schemas/Incident" }
+        generated_at: { $ref: "#/components/schemas/Timestamp" }
+    PastPage:
+      type: object
+      required: [month, incidents, next]
+      properties:
+        month:
+          description: The month this page covers; null if there are no past incidents at all.
+          type: [string, "null"]
+          examples: ["2026-11"]
+        incidents:
+          description: Newest first.
+          type: array
+          items: { $ref: "#/components/schemas/Incident" }
+        next:
+          description: The next (older) page's path, or null on the last page.
+          type: [string, "null"]
+          examples: ["/api/v1/incidents/past/2026-09"]
+
+    ServiceInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500, default: "" }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+    ServicePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        position: { type: integer, minimum: 0, maximum: 1000000 }
+    IncidentFields:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, maxLength: 20000, description: Markdown. }
+        impact: { $ref: "#/components/schemas/Impact" }
+        starts_at:
+          description: Defaults to now.
+          type: string
+          format: date-time
+        ends_at:
+          description: |
+            Required for maintenance (its planned end). An outage's end may only be in
+            the past; end an ongoing outage with an `ended` update. Must be after starts_at.
+          oneOf:
+            - { type: string, format: date-time }
+            - type: "null"
+        service_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string }
+    IncidentInput:
+      allOf:
+        - $ref: "#/components/schemas/IncidentFields"
+        - type: object
+          required: [title, impact, service_ids]
+      unevaluatedProperties: false
+    IncidentPatch:
+      allOf:
+        - $ref: "#/components/schemas/IncidentFields"
+      unevaluatedProperties: false
+    UpdateInput:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/UpdateStatus" }
+        body:
+          type: string
+          maxLength: 5000
+          default: ""
+          description: Markdown. Required (non-empty) unless status is `ended`.
+
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, examples: ["about:blank"] }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        errors:
+          description: Validation errors (422).
+          type: array
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path: { type: string, description: The field, dotted; empty for the whole body. }
+              message: { type: string }

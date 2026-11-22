@@ -1,8 +1,8 @@
 import type { Child } from "hono/jsx";
 import type { Incident, Service } from "../db";
 import { renderMarkdown } from "../markdown";
-import { STATUS_LABELS, stateOf, UPDATE_STATUS_LABELS } from "../status";
-import { Time } from "./layout";
+import { stateOf, UPDATE_STATUS_LABELS } from "../status";
+import { StatusBadge, Time } from "./layout";
 
 /** Timeline entries shown per incident in lists (plus Started); its own page shows all. */
 const ENTRIES_IN_LISTS = 3;
@@ -10,25 +10,27 @@ const ENTRIES_IN_LISTS = 3;
 interface Entry {
   label: string;
   iso: string;
-  body?: string;
+  body?: string | undefined;
   /** Planned but not reached yet, e.g. a maintenance window's end. */
   future?: boolean;
 }
 
 /**
- * The incident's internal timeline, newest first: Ended (or the planned end), the
- * posted updates, and Started with the description as the oldest entry.
+ * The incident's internal timeline, newest first: the (planned) end, the posted
+ * updates, and Started with the description. "Ended" is shown at the incident's end
+ * time, with the message of the "Ended" update if one was posted.
  */
 export function entriesOf(incident: Incident, now: string): Entry[] {
   const state = stateOf(incident, now);
   const entries: Entry[] = [];
-  const endedUpdate = incident.updates.some((u) => u.status === "ended");
-  if (incident.ends_at && state !== "ended") {
+  if (incident.ends_at && state === "ended") {
+    const ended = incident.updates.find((u) => u.status === "ended");
+    entries.push({ label: "Ended", iso: incident.ends_at, body: ended?.body });
+  } else if (incident.ends_at) {
     entries.push({ label: "Expected end", iso: incident.ends_at, future: true });
-  } else if (incident.ends_at && !endedUpdate) {
-    entries.push({ label: "Ended", iso: incident.ends_at });
   }
   for (const u of incident.updates) {
+    if (u.status === "ended") continue;
     entries.push({ label: UPDATE_STATUS_LABELS[u.status], iso: u.created_at, body: u.body });
   }
   entries.push({
@@ -37,7 +39,42 @@ export function entriesOf(incident: Incident, now: string): Entry[] {
     body: incident.body,
     future: state === "upcoming",
   });
-  return entries;
+  // Stable, so on equal times the order above (end, updates, start) holds.
+  return entries.sort((a, b) => (a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : 0));
+}
+
+/** More services than this are shown as one "N services" chip that opens a list. */
+const SERVICES_SHOWN = 2;
+
+/**
+ * The affected services: their names, or with more than two, "4 services" (or "All
+ * services") that lists them on hover or tap; site.js handles the hover.
+ */
+function ServiceChips(props: { ids: string[]; services: Map<string, Service> }) {
+  const { ids, services } = props;
+  const position = (id: string) => services.get(id)?.position ?? Number.MAX_SAFE_INTEGER;
+  const names = [...ids]
+    .sort((a, b) => position(a) - position(b))
+    .map((id) => services.get(id)?.name ?? "Deleted service");
+  if (names.length <= SERVICES_SHOWN)
+    return (
+      <>
+        {names.map((n) => (
+          <span class="chip">{n}</span>
+        ))}
+      </>
+    );
+  const all = ids.length === services.size && ids.every((id) => services.has(id));
+  return (
+    <details class="services-more">
+      <summary class="chip">{all ? "All services" : `${String(names.length)} services`}</summary>
+      <ul class="services-popover">
+        {names.map((n) => (
+          <li>{n}</li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
 /**
@@ -73,10 +110,8 @@ export function IncidentCard(props: {
       <header>
         <Heading>{href ? <a href={href}>{incident.title}</a> : incident.title}</Heading>
         <span class="chips">
-          <span class="chip impact">{STATUS_LABELS[incident.impact]}</span>
-          {incident.service_ids.map((id) => (
-            <span class="chip">{services.get(id)?.name ?? "Deleted service"}</span>
-          ))}
+          <StatusBadge status={incident.impact} live={stateOf(incident, now) === "active"} />
+          <ServiceChips ids={incident.service_ids} services={services} />
         </span>
         {props.headerAction}
       </header>

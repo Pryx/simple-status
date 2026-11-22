@@ -24,4 +24,9 @@ export default defineConfig(
     files: ["public/**/*.js"],
     languageOptions: { globals: globals.browser },
   },
+  {
+    files: ["scripts/**/*.mjs"],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: { globals: globals.node },
+  },
 );

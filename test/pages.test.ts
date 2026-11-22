@@ -31,10 +31,14 @@ describe("public pages", () => {
 
     const res = await get("/");
     expect(res.status).toBe(200);
-    expect(res.headers.get("cache-control")).toBe("no-store");
     const html = await res.text();
     expect(html).toMatch(/^<!doctype html>/);
     expect(html).toContain("Some systems are degraded");
+    // The services overview uses the same badges; only what's going on now pulses.
+    expect(html).toContain(
+      '<span class="chip impact status-minor_outage live">Minor outage</span>',
+    );
+    expect(html).toContain('<span class="chip impact status-maintenance">Maintenance</span>');
     expect(html).toContain("Website");
     expect(html).toContain("Login broken");
     expect(html).toContain("Upgrade");
@@ -64,23 +68,30 @@ describe("public pages", () => {
     expect(html).not.toContain("<b>");
   });
 
-  it("pages past incidents with a Load more link", async () => {
+  it("shows the latest month of history, and older months on their own pages", async () => {
     const s = await createService();
-    for (let h = 30; h > 19; h--) {
+    for (const [month, day] of [
+      ["2026-02", 3],
+      ["2026-02", 9],
+      ["2026-01", 15],
+    ] as const) {
       await createIncident({
+        title: `Outage ${month}-${String(day)}`,
         service_ids: [s.id],
-        starts_at: hoursFromNow(-h),
-        ends_at: hoursFromNow(-h + 1),
+        starts_at: `${month}-0${String(day % 10)}T10:00:00Z`,
+        ends_at: `${month}-0${String(day % 10)}T11:00:00Z`,
       });
     }
-    const first = await (await get("/")).text();
-    expect(first.match(/<li class="status-/g)).toHaveLength(10);
-    const next = /href="(\/history\?cursor=[^"]+)" data-load-more/.exec(first)?.[1];
-    expect(next).toBeDefined();
+    const home = await (await get("/")).text();
+    expect(home).toContain("February 2026");
+    expect(home.match(/<li class="status-/g)).toHaveLength(2);
+    const next = /href="(\/history\/[^"]+)" data-load-more/.exec(home)?.[1];
+    expect(next).toBe("/history/2026-01");
 
-    const second = await (await get(next ?? "")).text();
-    expect(second.match(/<li class="status-/g)).toHaveLength(1);
-    expect(second).not.toContain("data-load-more");
+    const older = await (await get(next ?? "")).text();
+    expect(older).toContain("January 2026");
+    expect(older).toContain("Outage 2026-01-15");
+    expect(older).not.toContain("data-load-more");
   });
 
   it("shows each incident's timeline, newest first, with Started and the description last", async () => {
@@ -100,7 +111,9 @@ describe("public pages", () => {
 
     const home = await (await get("/")).text();
     const card = home.slice(home.indexOf("Login broken"));
-    expect(card).toContain('<span class="chip impact">Minor outage</span>');
+    expect(card).toContain(
+      '<span class="chip impact status-minor_outage live">Minor outage</span>',
+    );
     expect(card).toContain('<span class="chip">Website</span>');
     // The newest three entries, a link to the rest, then Started with the description.
     const order = [
@@ -143,6 +156,62 @@ describe("public pages", () => {
     expect(page).toMatch(/class="entry current"><p class="entry-meta"><strong>Started/);
   });
 
+  it("shows Ended at the end time, with the Ended update's message", async () => {
+    const s = await createService();
+    const incident = await createIncident({ service_ids: [s.id] });
+    await admin("POST", `/incidents/${incident.id}/updates`, {
+      status: "ended",
+      body: "All fixed now.",
+    });
+    const html = await (await get(`/incidents/${incident.id}`)).text();
+    expect(html).toMatch(
+      /class="entry current"><p class="entry-meta"><strong>Ended<\/strong> <time[^>]*>[^<]*<\/time><\/p><div class="body"><p>All fixed now.<\/p>/,
+    );
+    expect(html.match(/<strong>Ended<\/strong>/g)).toHaveLength(1);
+  });
+
+  it("orders upcoming maintenance's entries by time", async () => {
+    const s = await createService();
+    const incident = await createIncident({
+      impact: "maintenance",
+      service_ids: [s.id],
+      starts_at: hoursFromNow(24),
+      ends_at: hoursFromNow(25),
+    });
+    await admin("POST", `/incidents/${incident.id}/updates`, {
+      status: "update",
+      body: "Moved by a day",
+    });
+    const html = await (await get(`/incidents/${incident.id}`)).text();
+    const order = ["Expected end", "Starts", "Moved by a day"].map((t) => html.indexOf(t));
+    expect(order.every((p) => p >= 0)).toBe(true);
+    expect([...order].sort((x, y) => x - y)).toEqual(order);
+  });
+
+  it("lists more than two services behind one chip", async () => {
+    const [a, b, c, d] = [
+      await createService("Web"),
+      await createService("API"),
+      await createService("DB"),
+      await createService("Mail"),
+    ];
+    const ids = (list: ({ id: string } | undefined)[]) => list.map((x) => x?.id ?? "");
+    const two = await createIncident({ title: "Two", service_ids: ids([a, b]) });
+    const three = await createIncident({ title: "Three", service_ids: ids([c, a, b]) });
+    const all = await createIncident({ title: "All", service_ids: ids([a, b, c, d]) });
+
+    const page = async (id: string) => (await get(`/incidents/${id}`)).text();
+    const twoHtml = await page(two.id);
+    expect(twoHtml).toContain('<span class="chip">Web</span><span class="chip">API</span>');
+    expect(twoHtml).not.toContain("services-more");
+
+    // In service order, whatever order they were given in.
+    expect(await page(three.id)).toContain(
+      '<details class="services-more"><summary class="chip">3 services</summary><ul class="services-popover"><li>Web</li><li>API</li><li>DB</li></ul></details>',
+    );
+    expect(await page(all.id)).toContain('<summary class="chip">All services</summary>');
+  });
+
   it("returns 404 for unknown incidents", async () => {
     expect((await get("/incidents/nope")).status).toBe(404);
   });
@@ -157,6 +226,50 @@ describe("admin pages", () => {
     expect(html).toContain(
       `class="button small edit-button" href="/admin/incidents/${ongoing.id}"`,
     );
+  });
+
+  it("posts updates from a composer, with Ended only once started, and no End now", async () => {
+    const s = await createService();
+    await createIncident({ title: "Ongoing", service_ids: [s.id] });
+    await createIncident({
+      title: "Planned",
+      impact: "maintenance",
+      service_ids: [s.id],
+      starts_at: hoursFromNow(1),
+      ends_at: hoursFromNow(2),
+    });
+    const html = await (await get("/admin")).text();
+    expect(html).not.toContain("End now");
+    const [ongoing = "", planned = ""] = ["Ongoing", "Planned"].map((title) => {
+      const start = html.indexOf(`>${title}</a>`);
+      return html.slice(start, html.indexOf("</article>", start));
+    });
+    expect(ongoing).toContain('<form method="post" class="composer"');
+    expect(ongoing).toContain('value="ended"');
+    expect(planned).toContain('value="update"');
+    expect(planned).not.toContain('value="ended"');
+  });
+
+  it("records who changed what, on the incident and on the Activity page", async () => {
+    const s = await createService("Website");
+    const incident = await createIncident({ title: "Login broken", service_ids: [s.id] });
+    await admin("PATCH", `/incidents/${incident.id}`, { title: "Login slow", body: "Details" });
+    await admin("POST", `/incidents/${incident.id}/updates`, { status: "identified", body: "x" });
+
+    const page = await (await get(`/admin/incidents/${incident.id}`)).text();
+    const activity = page.slice(page.indexOf("<h2>Activity</h2>"));
+    for (const text of [
+      "<strong>admin@example.com</strong> posted an Identified update",
+      "edited the title and description",
+      "created the incident",
+    ]) {
+      expect(activity).toContain(text);
+    }
+
+    await admin("DELETE", `/incidents/${incident.id}`);
+    const all = await (await get("/admin/activity")).text();
+    expect(all).toContain("deleted the incident “Login slow”");
+    expect(all).toContain("added the service “Website”");
   });
 
   it("offers an end time only for maintenance", async () => {

@@ -13,3 +13,9 @@ coverage/
 
 # Editors
 .idea/
+
+# v2 data imports: never commit dumps or converted data
+*.dump.sql
+import*.sql
+v2-*.sql
+*.mysql.sql

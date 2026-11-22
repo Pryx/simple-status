@@ -1,4 +1,8 @@
+# Headers for the Worker's static files (the admin's CSS and JS). The public site serves
+# its copies from R2; see README for the headers to set there.
 /*
   X-Content-Type-Options: nosniff
   Strict-Transport-Security: max-age=63072000; includeSubDomains
   Referrer-Policy: no-referrer
+  Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+  X-Frame-Options: DENY

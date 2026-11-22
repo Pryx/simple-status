@@ -222,12 +222,6 @@ h2 {
   color: var(--muted);
 }
 
-.status-text {
-  color: var(--text);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
 /* Incident cards: title and labels, then the incident's own timeline */
 
 .incident {
@@ -279,11 +273,113 @@ h2 {
   font-size: 0.8rem;
 }
 
-/* The impact label carries the severity colour. */
+/* "4 services": a chip that opens a small list (on hover, tap or Enter). */
+.services-more {
+  position: relative;
+}
+
+.services-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.services-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.services-more > summary::after {
+  content: "";
+  width: 0.35rem;
+  height: 0.35rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-0.1rem) rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.services-more[open] > summary::after {
+  transform: translateY(0.1rem) rotate(-135deg);
+}
+
+.services-more > summary:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.services-popover {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  min-width: 11rem;
+  max-width: min(18rem, 80vw);
+  margin: 0;
+  padding: 0.4rem 0;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
+  font-size: 0.875rem;
+}
+
+.services-popover li {
+  padding: 0.25rem 0.85rem;
+}
+
+/* Status and impact labels carry the severity colour. */
 .chip.impact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   background: color-mix(in srgb, var(--fill) 16%, var(--card));
   color: var(--text);
   font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Going on now: a softly pulsing dot. */
+/* In the label's text colour, which is the bright one in dark mode. */
+.chip.live::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--text) 70%, transparent);
+  }
+  50% {
+    opacity: 0.6;
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip.live::before {
+    animation: none;
+  }
+}
+
+.services .chip {
+  font-size: 0.85rem;
+  padding: 0.15rem 0.7rem;
+}
+
+.activity-text {
+  flex: 1;
 }
 
 .entries {
@@ -340,14 +436,14 @@ h2 {
 .timeline-items {
   list-style: none;
   margin: 0;
-  padding: 0 0 0 2rem;
+  padding: 0 0 0 32px;
   position: relative;
 }
 
 .timeline-items::before {
   content: "";
   position: absolute;
-  left: 0.5rem;
+  left: 8px;
   top: 0;
   bottom: 0;
   width: 2px;
@@ -359,13 +455,16 @@ h2 {
 }
 
 /* The dot on the line, in the incident's colour. */
+/* Whole pixels, so it renders as a true circle, centred on the 2px line (at 8–10px;
+   the list is padded by 32px). */
 .timeline-items > li::before {
   content: "";
   position: absolute;
-  left: -1.95rem;
-  top: 1rem;
-  width: 0.9rem;
-  height: 0.9rem;
+  left: -30px;
+  top: 16px;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
   border-radius: 50%;
   background: var(--fill);
   box-shadow: 0 0 0 4px var(--bg);
@@ -383,6 +482,28 @@ h2 {
   border-left: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   transform: rotate(45deg);
+}
+
+/* A month heading in the timeline, without a dot. */
+.timeline-items > li.timeline-month::before {
+  display: none;
+}
+
+/* Sits on the line and hides it there, so the line stops above it and goes on below. */
+.timeline-month h3 {
+  position: relative;
+  display: inline-block;
+  margin: 0.75rem 0 0.75rem -32px;
+  padding: 0.35rem 0.5rem 0.35rem 0;
+  background: var(--bg);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.timeline-items > li.timeline-month:first-child h3 {
+  margin-top: 0;
 }
 
 .load-more {
@@ -632,31 +753,228 @@ legend {
   font-weight: 600;
 }
 
-/* The quick update form under ongoing incidents. */
-.update-form {
+/* Markdown editor: toolbar, Write / Preview, preview pane. */
+.md-editor {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.md-editor:focus-within {
+  border-color: var(--link);
+}
+
+.md-editor textarea {
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card-muted);
+}
+
+.md-toolbar button {
+  min-width: 2rem;
+  padding: 0.2rem 0.5rem;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.md-toolbar button:hover:not(:disabled),
+.md-toolbar button[aria-pressed="true"] {
+  background: var(--chip);
+  color: var(--fg);
+}
+
+.md-toolbar button:disabled {
+  opacity: 0.4;
+}
+
+.md-tabs {
+  display: flex;
+  gap: 0.15rem;
+  margin-left: auto;
+}
+
+.md-preview {
+  min-height: 4.5rem;
+  padding: 0.6rem 0.75rem;
+}
+
+/* The update composer: one line until used, then the editor and its footer. */
+.composer {
   display: grid;
   gap: 0.6rem;
 }
 
-.update-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.5rem;
-  align-items: start;
+.composer.collapsed .md-toolbar,
+.composer.collapsed .composer-footer {
+  display: none;
 }
 
-.update-form details {
-  font-size: 0.9rem;
+.composer.collapsed textarea {
+  height: 2.6rem !important;
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+  cursor: text;
 }
 
-.update-form summary {
+.composer-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.composer-footer button[type="submit"] {
+  margin-left: auto;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.pill {
+  position: relative;
+  display: inline-flex;
+  font-weight: 400;
+}
+
+.pill input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pill span {
+  padding: 0.2rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 2rem;
+  font-size: 0.85rem;
   cursor: pointer;
+  user-select: none;
+}
+
+.pill input:focus-visible + span {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.pill input:checked + span {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--card);
+  font-weight: 600;
+}
+
+.pill-ended input:checked + span {
+  border-color: var(--fill-operational);
+  background: var(--fill-operational);
+  color: #fff;
+}
+
+.ended-hint {
+  display: none;
   color: var(--muted);
 }
 
-.update-form details label {
-  margin-top: 0.5rem;
-  max-width: 18rem;
+.composer:has(.pill-ended input:checked) .ended-hint {
+  display: inline;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.publish-status {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem 0.9rem;
+}
+
+.publish-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+}
+
+.publish-head .hint {
+  font-size: 0.85rem;
+}
+
+.progress {
+  height: 0.5rem;
+  border-radius: 1rem;
+  background: var(--chip);
+  overflow: hidden;
+}
+
+/* The fill glides to each new value, and its stripes move while publishing. */
+.progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--fill-maintenance);
+  background-image: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.25) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgb(255 255 255 / 0.25) 50%,
+    rgb(255 255 255 / 0.25) 75%,
+    transparent 75%
+  );
+  background-size: 1rem 1rem;
+  transition:
+    width 1.2s ease-out,
+    background-color 0.4s;
+  animation: progress-stripes 0.8s linear infinite;
+}
+
+@keyframes progress-stripes {
+  to {
+    background-position: 1rem 0;
+  }
+}
+
+.publish-status.done .progress > span {
+  background-color: var(--fill-operational);
+  background-image: none;
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress > span {
+    transition: none;
+    animation: none;
+  }
 }
 
 .actions {
@@ -853,7 +1171,7 @@ legend {
     flex-wrap: wrap;
   }
 
-  .sortable .status-text {
+  .sortable .chip {
     margin-left: 2.75rem;
   }
 }
@@ -932,4 +1250,36 @@ legend {
   color: var(--muted);
   font-size: 1.25rem;
   line-height: 1;
+}
+
+/* A logo instead of the site name (SITE_LOGO). With a dark version (SITE_LOGO_DARK),
+   the one that fits the theme is shown. */
+.logo {
+  display: block;
+  height: 2rem;
+  width: auto;
+  max-width: 14rem;
+  object-fit: contain;
+}
+
+.logo-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo-light {
+    display: none;
+  }
+
+  :root:not([data-theme="light"]) .logo-dark {
+    display: block;
+  }
+}
+
+:root[data-theme="dark"] .logo-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .logo-dark {
+  display: block;
 }

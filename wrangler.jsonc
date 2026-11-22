@@ -6,8 +6,15 @@
   "observability": {
     "enabled": true,
   },
+  // The Worker serves the admin only, on a hostname behind Cloudflare Access. Add it in
+  // your own config (see README), e.g.
+  //   "routes": [{ "pattern": "admin.status.example.com", "custom_domain": true }]
+  // No other hostname should reach the Worker.
+  "workers_dev": false,
+  "preview_urls": false,
   "assets": {
     "directory": "./public",
+    "binding": "ASSETS",
   },
   "d1_databases": [
     {
@@ -16,8 +23,31 @@
       "migrations_dir": "migrations",
     },
   ],
+  // The public site: static files, served from the bucket on its own public hostname.
+  "r2_buckets": [
+    {
+      "binding": "SITE",
+      "bucket_name": "simple-status-site",
+    },
+  ],
+  // Publishes leftover pages and the start or end of scheduled maintenance.
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
+  // Its id tells the cron job when a new version is deployed, to re-render the site.
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA",
+  },
   "vars": {
+    // Shown at the top of the public pages, in titles and in the feed.
     "SITE_NAME": "Status",
+    // Optional: a logo shown instead of the name, as a file under public/, e.g.
+    // "static/logo.svg", and a version for dark mode. Both are copied to the site.
+    "SITE_LOGO": "",
+    "SITE_LOGO_DARK": "",
+    // The public site's URL, for absolute links in the Atom feed, e.g.
+    // "https://status.example.com". Optional.
+    "SITE_URL": "",
   },
   // Set with `wrangler secret put` (or in .dev.vars locally). See README.
   "secrets": {

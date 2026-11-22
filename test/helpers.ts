@@ -1,4 +1,4 @@
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { sign } from "hono/jwt";
 import { vi } from "vitest";
 
@@ -53,8 +53,25 @@ export function accessToken(claims: Record<string, unknown> = {}): Promise<strin
   );
 }
 
-export function get(path: string, init?: RequestInit) {
-  return exports.default.fetch(`${BASE}${path}`, init);
+/** A GET as a signed-in admin. Public paths return the published files (the preview). */
+export async function get(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  if (!headers.has("Cf-Access-Jwt-Assertion")) {
+    headers.set("Cf-Access-Jwt-Assertion", await accessToken());
+  }
+  return exports.default.fetch(`${BASE}${path}`, { ...init, headers });
+}
+
+/** A published file straight from the bucket, as the public gets it. */
+export async function published(key: string) {
+  const object = await env.SITE.get(key);
+  return object && { text: await object.text(), contentType: object.httpMetadata?.contentType };
+}
+
+export async function publishedJson<T>(key: string): Promise<T> {
+  const object = await env.SITE.get(key);
+  if (!object) throw new Error(`Not published: ${key}`);
+  return object.json<T>();
 }
 
 /** A same-origin JSON request to the admin API with a valid Access token. */

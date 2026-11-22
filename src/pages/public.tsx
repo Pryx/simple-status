@@ -1,77 +1,123 @@
-import { Hono } from "hono";
 import type { Child } from "hono/jsx";
-import { decodeCursor, encodeCursor } from "../cursor";
-import {
-  type Cursor,
-  getIncident,
-  type Incident,
-  listCurrentIncidents,
-  listIncidents,
-  listServices,
-  type Service,
-} from "../db";
-import { BANNER_LABELS, serviceStatuses, STATUS_LABELS, stateOf, worst } from "../status";
-import type { AppEnv } from "../types";
+import type { Incident, Service } from "../db";
+import { BANNER_LABELS, type Status, stateOf } from "../status";
 import { IncidentCard } from "./incident-card";
-import { Layout, ThemeToggle } from "./layout";
+import { Layout, StatusBadge, ThemeToggle } from "./layout";
 
-const HISTORY_PAGE_SIZE = 10;
+/**
+ * The public site, rendered to static files (see publish.ts). The pages are served
+ * from R2 without the Worker's headers, so the policy is set in a meta tag too.
+ */
+const CSP = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self'",
+  "connect-src 'self'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join("; ");
 
-function Page(props: { title: string; siteName: string; children: Child }) {
+export interface SiteInfo {
+  name: string;
+  /** Paths of the logo, and of a version for dark mode, under public/. */
+  logo?: { light: string; dark?: string | undefined } | undefined;
+  now: string;
+  services: Service[];
+}
+
+export const historyPath = (month: string) => `/history/${month}`;
+export const incidentPath = (id: string) => `/incidents/${id}`;
+
+/** "2026-11" → "November 2026". */
+export function monthName(month: string): string {
+  const [year = 0, m = 1] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, m - 1)).toLocaleString("en", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function Page(props: { title: string; site: SiteInfo; children: Child }) {
   return (
-    <Layout title={props.title} siteName={props.siteName} script="/static/app.js">
+    <Layout
+      title={props.title}
+      siteName={props.site.name}
+      script="/static/app.js"
+      head={
+        <>
+          <meta http-equiv="Content-Security-Policy" content={CSP} />
+          <meta name="referrer" content="no-referrer" />
+          <link rel="alternate" type="application/atom+xml" title="Incidents" href="/feed.atom" />
+        </>
+      }
+    >
       {props.children}
       <footer class="footer wrap">
-        <a href="/api/v1/status">JSON API</a>
+        <a href="/feed.atom">Atom feed</a>
       </footer>
     </Layout>
   );
 }
 
 /** Site name and theme switch: the only "chrome" on the public pages. */
-function TopBar(props: { siteName: string }) {
+function TopBar(props: { site: SiteInfo }) {
+  const { name, logo } = props.site;
   return (
     <div class="topbar wrap">
       <a class="site-name" href="/">
-        {props.siteName}
+        {logo ? (
+          <>
+            <img class={logo.dark ? "logo logo-light" : "logo"} src={`/${logo.light}`} alt={name} />
+            {logo.dark && <img class="logo logo-dark" src={`/${logo.dark}`} alt={name} />}
+          </>
+        ) : (
+          name
+        )}
       </a>
       <ThemeToggle />
     </div>
   );
 }
 
-/** Past incidents. The "Load more" link is a plain link; app.js turns it into infinite scroll. */
+const byId = (services: Service[]) => new Map(services.map((s) => [s.id, s]));
+
+/**
+ * Past incidents, one month at a time. "Load more" links to the next older month;
+ * app.js turns it into infinite scroll.
+ */
 function Timeline(props: {
+  site: SiteInfo;
+  month: string | null;
   incidents: Incident[];
-  services: Map<string, Service>;
-  next: Cursor | null;
-  now: string;
+  older: string | null;
 }) {
+  const services = byId(props.site.services);
   return (
     <section class="timeline wrap">
       <h2>Past incidents</h2>
-      {props.incidents.length === 0 ? (
+      {props.month === null ? (
         <p class="empty">No past incidents.</p>
       ) : (
         <ol class="timeline-items">
+          <li class="timeline-month">
+            <h3>{monthName(props.month)}</h3>
+          </li>
           {props.incidents.map((i) => (
             <li class={`status-${i.impact}`}>
               <IncidentCard
                 incident={i}
-                services={props.services}
-                now={props.now}
-                href={`/incidents/${i.id}`}
+                services={services}
+                now={props.site.now}
+                href={incidentPath(i.id)}
               />
             </li>
           ))}
         </ol>
       )}
-      {props.next && (
-        <a
-          class="button load-more"
-          href={`/history?cursor=${encodeCursor(props.next)}`}
-          data-load-more
-        >
+      {props.older && (
+        <a class="button load-more" href={historyPath(props.older)} data-load-more>
           Load more
         </a>
       )}
@@ -79,122 +125,104 @@ function Timeline(props: {
   );
 }
 
-const byId = (services: Service[]) => new Map(services.map((s) => [s.id, s]));
+export function HomePage(props: {
+  site: SiteInfo;
+  overall: Status;
+  statuses: Map<string, Status>;
+  current: Incident[];
+  month: string | null;
+  past: Incident[];
+  older: string | null;
+}) {
+  const { site } = props;
+  const services = byId(site.services);
+  const active = props.current.filter((i) => stateOf(i, site.now) === "active");
+  const upcoming = props.current.filter((i) => stateOf(i, site.now) === "upcoming");
+  const cards = (incidents: Incident[]) =>
+    incidents.map((i) => (
+      <IncidentCard incident={i} services={services} now={site.now} href={incidentPath(i.id)} />
+    ));
 
-export const publicPages = new Hono<AppEnv>()
-  .get("/", async (c) => {
-    const now = new Date().toISOString();
-    const [services, current, past] = await Promise.all([
-      listServices(c.env.DB),
-      listCurrentIncidents(c.env.DB, now),
-      listIncidents(c.env.DB, { state: "ended", limit: HISTORY_PAGE_SIZE, now }),
-    ]);
-    const statuses = serviceStatuses(
-      services.map((s) => s.id),
-      current,
-      now,
-    );
-    const overall = worst(statuses.values());
-    const serviceMap = byId(services);
-    const active = current.filter((i) => stateOf(i, now) === "active");
-    const upcoming = current.filter((i) => stateOf(i, now) === "upcoming");
-    const siteName = c.env.SITE_NAME;
+  return (
+    <Page title={site.name} site={site}>
+      {/* app.js refreshes the [data-live] parts every 60 s. */}
+      <header class={`hero status-${props.overall}`} data-live-class="hero">
+        <TopBar site={site} />
+        <h1 class="wrap" data-live="banner" aria-live="polite">
+          {BANNER_LABELS[props.overall]}
+        </h1>
+      </header>
+      <main class="wrap" data-live="main">
+        <ul class="card services">
+          {site.services.length === 0 && <li class="empty">No services yet.</li>}
+          {site.services.map((s) => {
+            const status = props.statuses.get(s.id) ?? "operational";
+            return (
+              <li>
+                <span>
+                  <strong>{s.name}</strong>
+                  {s.description && <small>{s.description}</small>}
+                </span>
+                <StatusBadge status={status} live={status !== "operational"} />
+              </li>
+            );
+          })}
+        </ul>
 
-    return c.html(
-      <Page title={siteName} siteName={siteName}>
-        {/* Replaced every 60 s by app.js. */}
-        <div data-live>
-          <header class={`hero status-${overall}`}>
-            <TopBar siteName={siteName} />
-            <h1 class="wrap">{BANNER_LABELS[overall]}</h1>
-          </header>
-          <main class="wrap">
-            <ul class="card services">
-              {services.length === 0 && <li class="empty">No services yet.</li>}
-              {services.map((s) => {
-                const status = statuses.get(s.id) ?? "operational";
-                return (
-                  <li>
-                    <span>
-                      <strong>{s.name}</strong>
-                      {s.description && <small>{s.description}</small>}
-                    </span>
-                    <span class={`status-text status-${status}`}>{STATUS_LABELS[status]}</span>
-                  </li>
-                );
-              })}
-            </ul>
+        {active.length > 0 && (
+          <section>
+            <h2>Current incidents</h2>
+            {cards(active)}
+          </section>
+        )}
 
-            {active.length > 0 && (
-              <section>
-                <h2>Current incidents</h2>
-                {active.map((i) => (
-                  <IncidentCard
-                    incident={i}
-                    services={serviceMap}
-                    now={now}
-                    href={`/incidents/${i.id}`}
-                  />
-                ))}
-              </section>
-            )}
+        {upcoming.length > 0 && (
+          <section>
+            <h2>Scheduled</h2>
+            {cards(upcoming)}
+          </section>
+        )}
+      </main>
 
-            {upcoming.length > 0 && (
-              <section>
-                <h2>Scheduled</h2>
-                {upcoming.map((i) => (
-                  <IncidentCard
-                    incident={i}
-                    services={serviceMap}
-                    now={now}
-                    href={`/incidents/${i.id}`}
-                  />
-                ))}
-              </section>
-            )}
-          </main>
-        </div>
+      <Timeline site={site} month={props.month} incidents={props.past} older={props.older} />
+    </Page>
+  );
+}
 
-        <Timeline incidents={past.incidents} services={serviceMap} next={past.next} now={now} />
-      </Page>,
-    );
-  })
-  .get("/history", async (c) => {
-    const now = new Date().toISOString();
-    const after = decodeCursor(c.req.query("cursor"));
-    const [services, page] = await Promise.all([
-      listServices(c.env.DB),
-      listIncidents(c.env.DB, { state: "ended", limit: HISTORY_PAGE_SIZE, after, now }),
-    ]);
-    const siteName = c.env.SITE_NAME;
-    return c.html(
-      <Page title="Past incidents" siteName={siteName}>
-        <TopBar siteName={siteName} />
-        <Timeline incidents={page.incidents} services={byId(services)} next={page.next} now={now} />
-      </Page>,
-    );
-  })
-  .get("/incidents/:id", async (c) => {
-    const [incident, services] = await Promise.all([
-      getIncident(c.env.DB, c.req.param("id")),
-      listServices(c.env.DB),
-    ]);
-    if (!incident) return c.notFound();
-    const siteName = c.env.SITE_NAME;
-    return c.html(
-      <Page title={incident.title} siteName={siteName}>
-        <TopBar siteName={siteName} />
-        <main class="wrap single">
-          <IncidentCard
-            incident={incident}
-            services={byId(services)}
-            now={new Date().toISOString()}
-            heading="h1"
-          />
-          <p>
-            <a href="/">← Back to the status page</a>
-          </p>
-        </main>
-      </Page>,
-    );
-  });
+export function MonthPage(props: {
+  site: SiteInfo;
+  month: string;
+  incidents: Incident[];
+  older: string | null;
+}) {
+  return (
+    <Page title={`Past incidents, ${monthName(props.month)}`} site={props.site}>
+      <TopBar site={props.site} />
+      <Timeline
+        site={props.site}
+        month={props.month}
+        incidents={props.incidents}
+        older={props.older}
+      />
+    </Page>
+  );
+}
+
+export function IncidentPage(props: { site: SiteInfo; incident: Incident }) {
+  return (
+    <Page title={props.incident.title} site={props.site}>
+      <TopBar site={props.site} />
+      <main class="wrap single">
+        <IncidentCard
+          incident={props.incident}
+          services={byId(props.site.services)}
+          now={props.site.now}
+          heading="h1"
+        />
+        <p>
+          <a href="/">← Back to the status page</a>
+        </p>
+      </main>
+    </Page>
+  );
+}
