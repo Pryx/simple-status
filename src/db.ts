@@ -20,6 +20,8 @@ export interface Incident {
   service_ids: string[];
   /** Newest first. */
   updates: IncidentUpdate[];
+  /** Who created it. Admin only: incidentJson leaves it out of everything published. */
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +30,8 @@ export interface IncidentUpdate {
   id: string;
   status: UpdateStatus;
   body: string;
+  /** Who posted it. Admin only, like Incident.created_by. */
+  created_by: string | null;
   created_at: string;
 }
 
@@ -43,11 +47,13 @@ type IncidentRow = Omit<Incident, "service_ids" | "updates"> & {
 };
 
 const INCIDENT_SELECT = `
-  SELECT i.id, i.title, i.body, i.impact, i.starts_at, i.ends_at, i.created_at, i.updated_at,
+  SELECT i.id, i.title, i.body, i.impact, i.starts_at, i.ends_at, i.created_by, i.created_at,
+    i.updated_at,
     (SELECT json_group_array(service_id) FROM incident_services WHERE incident_id = i.id)
       AS service_ids,
     (SELECT json_group_array(json_object(
-        'id', id, 'status', status, 'body', body, 'created_at', created_at))
+        'id', id, 'status', status, 'body', body, 'created_by', created_by,
+        'created_at', created_at))
       FROM (SELECT * FROM incident_updates WHERE incident_id = i.id
             ORDER BY created_at DESC, id DESC))
       AS updates
@@ -297,19 +303,22 @@ export async function createIncident(
   db: D1Database,
   input: IncidentInput,
   now: string,
+  author: string,
 ): Promise<Incident> {
   const incident: Incident = {
     id: crypto.randomUUID(),
     ...input,
     updates: [],
+    created_by: author,
     created_at: now,
     updated_at: now,
   };
   await db.batch([
     db
       .prepare(
-        `INSERT INTO incidents (id, title, body, impact, starts_at, ends_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO incidents
+           (id, title, body, impact, starts_at, ends_at, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         incident.id,
@@ -318,6 +327,7 @@ export async function createIncident(
         incident.impact,
         incident.starts_at,
         incident.ends_at,
+        author,
         now,
         now,
       ),
@@ -361,14 +371,15 @@ export async function addIncidentUpdate(
   input: UpdateInput,
   endsAt: string | undefined,
   now: string,
+  author: string,
 ): Promise<void> {
   await db.batch([
     db
       .prepare(
-        `INSERT INTO incident_updates (id, incident_id, status, body, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO incident_updates (id, incident_id, status, body, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .bind(crypto.randomUUID(), incidentId, input.status, input.body, now),
+      .bind(crypto.randomUUID(), incidentId, input.status, input.body, author, now),
     db
       .prepare("UPDATE incidents SET ends_at = COALESCE(?, ends_at), updated_at = ? WHERE id = ?")
       .bind(endsAt ?? null, now, incidentId),

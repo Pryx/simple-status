@@ -42,9 +42,26 @@ const HTML = { contentType: "text/html; charset=utf-8", cacheControl: PAGE_CACHE
 const JSON_TYPE = { contentType: "application/json; charset=utf-8", cacheControl: PAGE_CACHE };
 const ATOM = { contentType: "application/atom+xml; charset=utf-8", cacheControl: PAGE_CACHE };
 
-/** The JSON shape of an incident: the stored fields plus its state at `now`. */
+/**
+ * The JSON shape of an incident: the stored fields plus its state at `now`. Authors
+ * are left out: who posted what is for the admin only.
+ */
 export const incidentJson = (incident: Incident, now: string) => ({
-  ...incident,
+  id: incident.id,
+  title: incident.title,
+  body: incident.body,
+  impact: incident.impact,
+  starts_at: incident.starts_at,
+  ends_at: incident.ends_at,
+  service_ids: incident.service_ids,
+  updates: incident.updates.map((u) => ({
+    id: u.id,
+    status: u.status,
+    body: u.body,
+    created_at: u.created_at,
+  })),
+  created_at: incident.created_at,
+  updated_at: incident.updated_at,
   state: stateOf(incident, now),
 });
 

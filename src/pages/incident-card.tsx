@@ -13,6 +13,8 @@ interface Entry {
   body?: string | undefined;
   /** Planned but not reached yet, e.g. a maintenance window's end. */
   future?: boolean;
+  /** Who posted it; shown in the admin only. */
+  by?: string | null | undefined;
 }
 
 /**
@@ -25,19 +27,30 @@ export function entriesOf(incident: Incident, now: string): Entry[] {
   const entries: Entry[] = [];
   if (incident.ends_at && state === "ended") {
     const ended = incident.updates.find((u) => u.status === "ended");
-    entries.push({ label: "Ended", iso: incident.ends_at, body: ended?.body });
+    entries.push({
+      label: "Ended",
+      iso: incident.ends_at,
+      body: ended?.body,
+      by: ended?.created_by,
+    });
   } else if (incident.ends_at) {
     entries.push({ label: "Expected end", iso: incident.ends_at, future: true });
   }
   for (const u of incident.updates) {
     if (u.status === "ended") continue;
-    entries.push({ label: UPDATE_STATUS_LABELS[u.status], iso: u.created_at, body: u.body });
+    entries.push({
+      label: UPDATE_STATUS_LABELS[u.status],
+      iso: u.created_at,
+      body: u.body,
+      by: u.created_by,
+    });
   }
   entries.push({
     label: state === "upcoming" ? "Starts" : "Started",
     iso: incident.starts_at,
     body: incident.body,
     future: state === "upcoming",
+    by: incident.created_by,
   });
   // Stable, so on equal times the order above (end, updates, start) holds.
   return entries.sort((a, b) => (a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : 0));
@@ -90,6 +103,8 @@ export function IncidentCard(props: {
   heading?: "h1" | "h3";
   /** Shown at the end of the header, e.g. the admin's Edit button. */
   headerAction?: Child;
+  /** Show who posted each entry: in the admin only, never on the public site. */
+  showAuthors?: boolean;
   children?: Child;
 }) {
   const { incident, services, now, href } = props;
@@ -132,6 +147,7 @@ export function IncidentCard(props: {
             >
               <p class="entry-meta">
                 <strong>{e.label}</strong> <Time iso={e.iso} />
+                {props.showAuthors && e.by && <span class="entry-by"> · {e.by}</span>}
               </p>
               {e.body && (
                 <div class="body" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.body) }} />

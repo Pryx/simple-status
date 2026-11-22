@@ -149,7 +149,11 @@ describe("v2 import", () => {
     expect(links.results.map((l) => l.name).sort()).toEqual(["API", "Website & CDN"]);
     expect(await get("Still broken")).toMatchObject({ state: "active", ends_at: null });
 
-    // Authors go into the activity log.
+    // Authors are kept, and go into the activity log.
+    const authors = await env.DB.prepare(
+      "SELECT DISTINCT created_by FROM incidents UNION SELECT DISTINCT created_by FROM incident_updates",
+    ).all<{ created_by: string }>();
+    expect(authors.results).toEqual([{ created_by: "alice (v2)" }]);
     const actors = await env.DB.prepare("SELECT DISTINCT actor FROM activity").all<{
       actor: string;
     }>();

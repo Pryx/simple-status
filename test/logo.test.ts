@@ -12,6 +12,7 @@ const incident: Incident = {
   ends_at: null,
   service_ids: [],
   updates: [],
+  created_by: "admin@example.com",
   created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-01T00:00:00.000Z",
 };

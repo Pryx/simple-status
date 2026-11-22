@@ -161,7 +161,7 @@ export const adminApi = new Hono<AppEnv>()
     const now = new Date().toISOString();
     const input = validate(incidentInput(now), await readJson(c));
     await checkServicesExist(c, input.service_ids);
-    const incident = await db.createIncident(c.env.DB, input, now);
+    const incident = await db.createIncident(c.env.DB, input, now, c.var.admin);
     await record(c, "incident.created", incident.id, { name: incident.title });
     await republish(c.env, pagesOf(incident));
     c.header("Location", `/api/v1/incidents/${incident.id}`);
@@ -233,7 +233,7 @@ export const adminApi = new Hono<AppEnv>()
       if (state === "active") endsAt = now;
     }
 
-    await db.addIncidentUpdate(c.env.DB, id, input, endsAt, now);
+    await db.addIncidentUpdate(c.env.DB, id, input, endsAt, now, c.var.admin);
     const updated = await db.getIncident(c.env.DB, id);
     if (!updated) throw notFound();
     await record(c, "update.posted", id, { name: updated.title, status: input.status });

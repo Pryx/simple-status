@@ -272,6 +272,30 @@ describe("admin pages", () => {
     expect(all).toContain("added the service “Website”");
   });
 
+  it("shows who posted each update, in the admin only", async () => {
+    const s = await createService();
+    const incident = await createIncident({ title: "Down", service_ids: [s.id] });
+    await admin("POST", `/incidents/${incident.id}/updates`, { status: "identified", body: "x" });
+
+    const dashboard = await (await get("/admin")).text();
+    expect(dashboard).toMatch(
+      /<strong>Identified<\/strong> <time[^>]*>[^<]*<\/time><span class="entry-by"> · admin@example.com<\/span>/,
+    );
+    expect(dashboard).toMatch(
+      /<strong>Started<\/strong> <time[^>]*>[^<]*<\/time><span class="entry-by"> · admin@example.com/,
+    );
+    const edit = await (await get(`/admin/incidents/${incident.id}`)).text();
+    expect(edit).toContain('<span class="entry-by"> · admin@example.com</span>');
+
+    // Nothing published names anyone.
+    for (const path of ["/", `/incidents/${incident.id}`, "/api/v1/summary", "/feed.atom"]) {
+      expect(await (await get(path)).text(), path).not.toContain("admin@example.com");
+    }
+    expect(await (await get(`/api/v1/incidents/${incident.id}`)).text()).not.toContain(
+      "created_by",
+    );
+  });
+
   it("offers an end time only for maintenance", async () => {
     const s = await createService();
     const outage = await createIncident({ service_ids: [s.id] });

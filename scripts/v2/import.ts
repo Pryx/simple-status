@@ -15,7 +15,8 @@
  *   One that never was is still ongoing, as it was on the v2 page; the report lists it.
  * - "Operational" incidents become updates on the outages they ended: "Ended" on the
  *   one it finished, "Update" where it recovered only some of the services.
- * - The author of each incident goes into the activity log.
+ * - The author of each incident and update is kept (shown in the admin only) and goes
+ *   into the activity log.
  * - Not imported: staff accounts (sign-in is Cloudflare Access now), subscribers,
  *   queued notifications, tokens and settings. The report says what was left out.
  */
@@ -391,6 +392,7 @@ export async function convert(tables: Tables, now: number): Promise<ImportResult
         impact,
         starts_at: startsAt,
         ends_at: endsAt,
+        created_by: `${incident.author} (v2)`,
         created_at: createdAt,
         updated_at: updatedAt,
       }),
@@ -414,6 +416,7 @@ export async function convert(tables: Tables, now: number): Promise<ImportResult
           incident_id: id,
           status: u.status,
           body: u.body.slice(0, 5_000),
+          created_by: `${u.author} (v2)`,
           created_at: iso(u.at),
         }),
         insert("activity", {

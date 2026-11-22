@@ -481,6 +481,7 @@ export const adminPages = new Hono<AppEnv>()
                 now={now}
                 href={`/admin/incidents/${i.id}`}
                 headerAction={<EditButton href={`/admin/incidents/${i.id}`} />}
+                showAuthors
               >
                 <UpdateComposer incident={i} now={now} redirect="/admin" />
               </IncidentCard>
@@ -572,6 +573,7 @@ export const adminPages = new Hono<AppEnv>()
                 <li>
                   <span class="update-summary">
                     <strong>{UPDATE_STATUS_LABELS[u.status]}</strong> <Time iso={u.created_at} />
+                    {u.created_by && <span class="entry-by"> · {u.created_by}</span>}
                     <span class="update-text">{u.body || "No message"}</span>
                   </span>
                   <ApiButton

@@ -1289,3 +1289,9 @@ legend {
 :root[data-theme="dark"] .logo-dark {
   display: block;
 }
+
+/* Who posted an update (admin only). */
+.entry-by {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
