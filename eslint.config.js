@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import { defineConfig, globalIgnores } from "eslint/config";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
@@ -18,5 +19,9 @@ export default defineConfig(
   {
     files: ["**/*.js"],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    files: ["public/**/*.js"],
+    languageOptions: { globals: globals.browser },
   },
 );

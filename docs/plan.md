@@ -1,4 +1,7 @@
-# Rewrite plan (draft)
+# Rewrite plan
+
+> **Status (2026-11-22):** milestones 0–4 are implemented, plus incident updates. What is left is deploying
+> and the release tasks in milestone 5. The README documents the API as built.
 
 **Current goal, kept as simple as possible:**
 - a **REST API** for managing and listing incidents (and the services they affect);
@@ -9,8 +12,9 @@ There are no subscriptions, email, uptime checks, groups or translations in the 
 version. Background is in [considerations.md](considerations.md) and
 [hosting.md](hosting.md).
 
-**Stack:** TypeScript, Hono, Drizzle, zod, Cloudflare Workers + D1, Cloudflare
-Access, Vitest, Wrangler. No frontend framework, no CSS framework.
+**Stack:** TypeScript, Hono, zod, Cloudflare Workers + D1, Cloudflare Access,
+Vitest, Wrangler, markdown-it. No ORM (three tables of plain SQL, with Wrangler's D1
+migrations), no frontend framework, no CSS framework.
 
 ## Architecture
 
@@ -41,8 +45,7 @@ flowchart LR
   start or end on their own both show up immediately. There is no purge, TTL or cron.
   The Worker runs for every request anyway (caching would only save D1 reads, which
   are well within the free quota). The public page refreshes itself by polling
-  `GET /api/v1/status` every 60 s and updating the banner and service list, without
-  a full page reload.
+  itself every 60 s and swapping in the new content, without a full page reload.
 
 ## Data model
 
@@ -51,22 +54,20 @@ erDiagram
     services ||--o{ incident_services : ""
     incidents ||--|{ incident_services : ""
     services {
-        text id PK "ulid"
+        text id PK "uuid"
         text name
         text description
-        int sort_order
+        int position
         text created_at
         text updated_at
     }
     incidents {
-        text id PK "ulid"
-        text kind "incident | maintenance"
-        text impact "major | minor | maintenance"
-        text status "open | resolved (incident), scheduled | done (maintenance)"
+        text id PK "uuid"
         text title
         text body "Markdown"
+        text impact "maintenance | minor_outage | major_outage"
         text starts_at "UTC ISO 8601"
-        text ends_at "nullable; set when resolved or planned end"
+        text ends_at "nullable; required for maintenance"
         text created_at
         text updated_at
     }
@@ -76,40 +77,55 @@ erDiagram
     }
 ```
 
-**Status rules** (pure functions, unit-tested):
-- **Active incident:** `starts_at <= now`, and either `ends_at` is null or
-  `ends_at > now`, and `status` is not `resolved` or `done`.
+There is one vocabulary: a service's **status** is `operational`, `maintenance`,
+`minor_outage` or `major_outage`, and an incident's **impact** is the status it gives
+the services it affects. Planned maintenance is an incident with impact
+`maintenance`. There is no stored status (no `kind` or `status` column): an
+incident's **state** follows from its times, so nothing has to be kept in sync.
+
+**Incident updates** (`incident_updates`: `incident_id`, `status`, `body`, `created_at`)
+are status messages posted while an incident runs. `status` is `identified`,
+`monitoring`, `update` or `ended`; posting `ended` sets the incident's `ends_at`. Moving a planned end
+(overrunning maintenance) is an edit of the incident. The public timeline per incident is
+Started (`starts_at` + `body`), the updates, and Ended (`ends_at`), newest first.
+
+**Status rules** (pure functions in `src/status.ts`, unit-tested):
+- **State:** `upcoming` while `now < starts_at`; `ended` once `ends_at <= now`;
+  otherwise `active`. Resolving an incident means setting `ends_at`.
 - **Service status:** the worst impact among the active incidents affecting the
   service, or `operational` if there are none.
 - **Overall banner:** the worst service status.
-- **Upcoming:** maintenance with `starts_at > now`.
+- Every incident affects at least one service. A service can't be deleted while
+  incidents refer to it (409), so history is never lost silently.
 
 ## REST API (v1)
 
 JSON only. Errors use `application/problem+json` (RFC 9457). Inputs are validated
-with zod, and `limit` is capped at 50.
+with zod, and `limit` is capped at 50. Pagination uses an opaque keyset cursor.
 
 ### Public (no auth)
 
 | Method | Path | Returns |
 | --- | --- | --- |
-| GET | `/api/v1/status` | Overall status, plus every service with its current status |
-| GET | `/api/v1/services` | Services |
-| GET | `/api/v1/incidents?state=active\|upcoming\|past&limit=&cursor=` | Paginated incidents, newest first |
-| GET | `/api/v1/incidents/{id}` | One incident with the services it affects |
+| GET | `/api/v1/status` | Overall status, every service with its status, active and upcoming incidents |
+| GET | `/api/v1/services`, `/api/v1/services/{id}` | Services |
+| GET | `/api/v1/incidents?state=upcoming\|active\|ended&limit=&cursor=` | Paginated incidents, newest first (upcoming: soonest first) |
+| GET | `/api/v1/incidents/{id}` | One incident, with its `state` and `service_ids` |
 
 ### Admin (behind Access)
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/admin/api/v1/services` | List services |
 | POST | `/admin/api/v1/services` | Create a service |
 | PATCH | `/admin/api/v1/services/{id}` | Update a service |
-| DELETE | `/admin/api/v1/services/{id}` | Refused (409) while incidents reference the service, so history is never lost silently |
-| GET | `/admin/api/v1/incidents` | List incidents, including all states |
+| DELETE | `/admin/api/v1/services/{id}` | Refused (409) while incidents refer to the service |
 | POST | `/admin/api/v1/incidents` | Create an incident or maintenance |
-| PATCH | `/admin/api/v1/incidents/{id}` | Update it, including resolving it (`status`, `ends_at`) |
+| PATCH | `/admin/api/v1/incidents/{id}` | Update it, including resolving it (`ends_at`) |
 | DELETE | `/admin/api/v1/incidents/{id}` | Delete it |
+
+There are no admin `GET` endpoints: they would duplicate the public read API, and
+the admin pages read from D1 directly. A `PATCH` is merged with the stored record and
+the result is validated as a whole, so the cross-field rules always hold.
 
 **Write requests from browsers:** the management API accepts only
 `Content-Type: application/json` and checks `Origin`. Together with the
@@ -135,7 +151,7 @@ flowchart LR
 - Deploy to a free `*.workers.dev` URL.
 
 ### 1 – Data model and public read API
-- Drizzle schema and migrations, plus a seed script.
+- SQL schema as a D1 migration, plus `seed.sql`.
 - The status rules as pure functions, with unit tests.
 - The public `GET` endpoints, tested against seeded D1.
 
@@ -147,7 +163,7 @@ flowchart LR
 
 ### 3 – Public page
 - Server-rendered HTML (Hono JSX) and one small CSS file, plus a small script for
-  relative times, local time zones and 60 s auto-refresh from the read API.
+  relative times, local time zones and 60 s auto-refresh.
 - Contents: the overall banner, services with their status, active incidents,
   upcoming maintenance, and the recent history with a "load more" link; plus a page
   for each incident.
@@ -155,8 +171,9 @@ flowchart LR
   allowlist.
 
 ### 4 – Admin UI
-- A few static pages (services list and form, incidents list and form) using plain
-  JavaScript and `fetch` against the admin API. There is no build step for the UI.
+- Server-rendered pages (services list and form, incidents list and form). One plain
+  script submits the forms as JSON to the admin API with `fetch`. There is no build
+  step for the UI.
 
 ### 5 – Release
 - A README and a "deploy your own" guide (Cloudflare account, D1, an Access
@@ -166,6 +183,6 @@ flowchart LR
 
 ## Later (not now)
 
-Incident updates (a timeline per incident), service groups, email subscriptions
+Service groups, email subscriptions
 (and with them an outbox processed by a Cron Trigger), RSS/Atom, translations,
 roles, uptime checks, and a Node/Docker build.

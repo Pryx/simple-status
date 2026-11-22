@@ -30,7 +30,7 @@ surface to attack as possible.
 | --- | --- | --- |
 | Runtime | **Cloudflare Workers**, TypeScript | One Worker serves the public pages, API, admin UI, subscriber flows and feeds. |
 | Web framework | **Hono** | Small, standards-based (Fetch API). Also runs on Node, Bun and Deno, which keeps us portable. |
-| Database | **D1** (SQLite) | Accessed through **Drizzle ORM** with versioned migrations. Drizzle also supports SQLite/libSQL and Postgres for self-hosting. |
+| Database | **D1** (SQLite) | Plain SQL with versioned D1 migrations. The queries are standard SQLite, so a Node build could use a SQLite file. |
 | Static assets | Workers static assets | CSS, small JS and flags; no CDN dependencies. |
 | Background work | **Cron Trigger** (for example every minute) | Processes a notification outbox table in D1. No dependency on a paid queue product. |
 | Email | External provider API (Resend, Brevo, SMTP relay, …) behind a `Mailer` interface | Workers' built-in email sending only reaches verified addresses, so it cannot email subscribers. |
@@ -99,7 +99,7 @@ in with Access or register a passkey through an emailed link.
 
 Cloudflare is the reference deployment, but the core should not depend on it:
 
-- Only touch platform services through small interfaces: `Db` (Drizzle),
+- Only touch platform services through small interfaces: `Db` (the queries in `src/db.ts`),
   `Mailer`, `Cache`, `Scheduler`, `AuthProvider`.
 - Ship a **Node adapter plus a Docker image** (SQLite file or Postgres, a cron
   process, built-in auth), for people who want to self-host on a VPS.

@@ -1,0 +1,6 @@
+# Copy to .dev.vars for `npm run dev`. .dev.vars is never deployed.
+#
+# With ACCESS_AUD=local-dev-no-auth the admin works without Cloudflare Access, but
+# only for requests to localhost. In production, set the real values as secrets.
+ACCESS_TEAM_DOMAIN=example.cloudflareaccess.com
+ACCESS_AUD=local-dev-no-auth

@@ -6,4 +6,21 @@
   "observability": {
     "enabled": true,
   },
+  "assets": {
+    "directory": "./public",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "simple-status",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "vars": {
+    "SITE_NAME": "Status",
+  },
+  // Set with `wrangler secret put` (or in .dev.vars locally). See README.
+  "secrets": {
+    "required": ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD"],
+  },
 }

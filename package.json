@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
     "cf-typegen": "wrangler types",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:seed": "wrangler d1 execute DB --local --file=seed.sql",
     "typecheck": "wrangler types && tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -15,12 +17,16 @@
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
   },
   "dependencies": {
-    "hono": "^4.13.19"
+    "hono": "^4.13.19",
+    "markdown-it": "^15.0.3",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.9.0",
     "@eslint/js": "^10.0.1",
+    "@types/markdown-it": "^14.2.0",
     "eslint": "^10.15.0",
+    "globals": "^17.14.0",
     "prettier": "^3.10.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.73.0",
