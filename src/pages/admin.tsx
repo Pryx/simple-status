@@ -33,9 +33,13 @@ const PAST_PAGE_SIZE = 20;
 /** Impact choices, in the order they are offered. */
 const IMPACT_CHOICES: Impact[] = ["minor_outage", "major_outage", "maintenance"];
 
+/** A page of the public site: on SITE_URL once deployed, else the local preview. */
+const publicUrl = (siteUrl: string, path: string) => `${siteUrl.replace(/\/+$/, "")}${path}`;
+
 function AdminPage(props: {
   title: string;
   siteName: string;
+  siteUrl: string;
   admin: string;
   section: "dashboard" | "services" | "activity";
   actions?: Child;
@@ -61,10 +65,29 @@ function AdminPage(props: {
               Activity
             </a>
           </nav>
-          <span class="admin-user">
-            <small>{props.admin}</small>
-            <a href="/">View site</a>
+          <span class="admin-actions">
+            <a class="view-site" href={publicUrl(props.siteUrl, "/")}>
+              View site <span aria-hidden="true">↗</span>
+            </a>
             <ThemeToggle />
+            {/* Who's signed in, and signing out (Cloudflare Access's own logout). */}
+            <details class="user-menu">
+              <summary
+                class="avatar"
+                title={props.admin}
+                aria-label={`Signed in as ${props.admin}`}
+              >
+                {props.admin.trim().charAt(0).toUpperCase() || "?"}
+              </summary>
+              <div class="user-menu-panel">
+                <p>
+                  Signed in as
+                  <br />
+                  <strong>{props.admin}</strong>
+                </p>
+                <a href="/cdn-cgi/access/logout">Sign out</a>
+              </div>
+            </details>
           </span>
         </div>
       </header>
@@ -453,6 +476,7 @@ export const adminPages = new Hono<AppEnv>()
       <AdminPage
         title="Dashboard"
         siteName={c.env.SITE_NAME}
+        siteUrl={c.env.SITE_URL}
         admin={c.var.admin}
         section="dashboard"
         actions={
@@ -462,7 +486,7 @@ export const adminPages = new Hono<AppEnv>()
         }
       >
         <p class={`admin-banner status-${overall}`}>
-          {BANNER_LABELS[overall]} <a href="/">View status page</a>
+          {BANNER_LABELS[overall]} <a href={publicUrl(c.env.SITE_URL, "/")}>View status page</a>
         </p>
         <PublishStatus {...queued} />
 
@@ -532,6 +556,7 @@ export const adminPages = new Hono<AppEnv>()
       <AdminPage
         title="New incident"
         siteName={c.env.SITE_NAME}
+        siteUrl={c.env.SITE_URL}
         admin={c.var.admin}
         section="dashboard"
       >
@@ -554,10 +579,11 @@ export const adminPages = new Hono<AppEnv>()
       <AdminPage
         title={incident.title}
         siteName={c.env.SITE_NAME}
+        siteUrl={c.env.SITE_URL}
         admin={c.var.admin}
         section="dashboard"
         actions={
-          <a class="button" href={`/incidents/${incident.id}`}>
+          <a class="button" href={publicUrl(c.env.SITE_URL, `/incidents/${incident.id}`)}>
             View public page
           </a>
         }
@@ -627,7 +653,13 @@ export const adminPages = new Hono<AppEnv>()
     const page = entries.slice(0, ACTIVITY_PAGE_SIZE);
     const last = page.at(-1);
     return c.html(
-      <AdminPage title="Activity" siteName={c.env.SITE_NAME} admin={c.var.admin} section="activity">
+      <AdminPage
+        title="Activity"
+        siteName={c.env.SITE_NAME}
+        siteUrl={c.env.SITE_URL}
+        admin={c.var.admin}
+        section="activity"
+      >
         <p class="hint">Every change made in the admin, newest first. Only admins see this.</p>
         <ActivityList entries={page} withSubject={true} />
         {entries.length > ACTIVITY_PAGE_SIZE && last && (
@@ -650,7 +682,13 @@ export const adminPages = new Hono<AppEnv>()
       now,
     );
     return c.html(
-      <AdminPage title="Services" siteName={c.env.SITE_NAME} admin={c.var.admin} section="services">
+      <AdminPage
+        title="Services"
+        siteName={c.env.SITE_NAME}
+        siteUrl={c.env.SITE_URL}
+        admin={c.var.admin}
+        section="services"
+      >
         <p class="hint" id="sort-hint">
           Drag a service by its handle to reorder (or focus the handle and use the arrow keys).
           Names and descriptions are saved when you leave the field.

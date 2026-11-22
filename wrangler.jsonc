@@ -15,6 +15,11 @@
   // No other hostname should reach the Worker.
   "workers_dev": false,
   "preview_urls": false,
+  // wrangler dev would otherwise present requests as if to the first route's host
+  // (your admin address), and the local admin only works on localhost.
+  "dev": {
+    "host": "localhost",
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

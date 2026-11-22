@@ -98,7 +98,11 @@ export const requireAccess = createMiddleware<AppEnv>(async (c, next) => {
   }
 
   if (!teamDomain || !audience || audience === LOCAL_DEV_AUDIENCE) {
-    console.error("ACCESS_TEAM_DOMAIN and ACCESS_AUD must be set to use the admin.");
+    console.error(
+      isLocalhost(c.req.url)
+        ? "ACCESS_TEAM_DOMAIN and ACCESS_AUD must be set. Locally: cp .dev.vars.example .dev.vars, then restart."
+        : "ACCESS_TEAM_DOMAIN and ACCESS_AUD must be set to use the admin. Run npm run setup.",
+    );
     throw new ProblemError({
       title: "Service Unavailable",
       status: 503,

@@ -54,9 +54,6 @@ function Page(props: { title: string; site: SiteInfo; children: Child }) {
       }
     >
       {props.children}
-      <footer class="footer wrap">
-        <a href="/feed.atom">Atom feed</a>
-      </footer>
     </Layout>
   );
 }
@@ -76,7 +73,21 @@ function TopBar(props: { site: SiteInfo }) {
         )}
         {name}
       </a>
-      <ThemeToggle />
+      <span class="topbar-actions">
+        <a class="feed-link" href="/feed.atom" title="Subscribe (Atom feed)" aria-label="Atom feed">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="6" cy="18" r="2" fill="currentColor" />
+            <path
+              d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        </a>
+        <ThemeToggle />
+      </span>
     </div>
   );
 }

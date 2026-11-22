@@ -119,7 +119,7 @@ or the expected end, the other updates, and Started (`starts_at` + `body`).
 ## REST API (v1)
 
 JSON only. Admin errors use `application/problem+json` (RFC 9457), and inputs are
-validated with zod. The README has the full tables.
+validated with zod. [openapi.yaml](openapi.yaml) describes every endpoint.
 
 - **Public** (static files, CORS open): `/api/v1/summary` (a summary),
   `/api/v1/services`, `/api/v1/incidents/active`, `/api/v1/incidents/scheduled`,

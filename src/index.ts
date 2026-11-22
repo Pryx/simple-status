@@ -44,12 +44,18 @@ app.route("/admin/api/v1", adminApi);
 app.route("/admin", adminPages);
 
 /**
- * A preview of the published site, read from the bucket. The public serves the same
- * files from the bucket's own hostname, without the Worker. In local development
- * there is no cron job, so the preview runs its work first.
+ * Other paths. Deployed (with SITE_URL set), "/" opens the admin and the rest goes to
+ * the public site, which is served from the bucket's own hostname without the Worker.
+ * Locally (or without SITE_URL), they preview the published files from the bucket;
+ * there's no cron job locally, so the preview runs its work first.
  */
 app.get("*", async (c) => {
-  if (isLocalhost(c.req.url)) await scheduledPublish(c.env);
+  const local = isLocalhost(c.req.url);
+  const siteUrl = c.env.SITE_URL.replace(/\/+$/, "");
+  if (!local && siteUrl) {
+    return c.req.path === "/" ? c.redirect("/admin") : c.redirect(`${siteUrl}${c.req.path}`);
+  }
+  if (local) await scheduledPublish(c.env);
   const object = await c.env.SITE.get(siteKey(c.req.path));
   if (!object) return c.notFound();
   const headers = new Headers();
@@ -57,9 +63,16 @@ app.get("*", async (c) => {
   return new Response(object.body, { headers });
 });
 
+/** On the admin's address, a wrong path points the way to the admin. (No user input in it.) */
+const NOT_FOUND_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Not found</title>
+<link rel="stylesheet" href="/static/style.css"></head><body><main class="wrap single">
+<h1>Not found</h1><p>There's nothing at this address. <a href="/admin">Go to the admin</a></p>
+</main></body></html>`;
+
 app.notFound((c) => {
   if (isApi(c.req.path)) return problem(c, { title: "Not Found", status: 404 });
-  return c.text("Not Found", 404);
+  return c.html(NOT_FOUND_PAGE, 404);
 });
 
 app.onError((err, c) => {

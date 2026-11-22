@@ -1,103 +1,123 @@
 # simple-status
 
-A small, free-to-host status page with an admin UI and a REST API, running on
-Cloudflare Workers and D1. It replaces Server Status v2 and is **not** backwards
-compatible with it.
+A small status page you can host for free on Cloudflare, with an admin UI, a JSON
+API and an Atom feed. It replaces Server Status v2 (and can import its data).
 
-- **Public page** (`/`): the overall status is the headline, on a background in
-  its colour, so it's clear at a glance. Below it are the services, current and
-  scheduled incidents, and a timeline of past incidents, by month, that loads more
-  as you scroll. It refreshes every 60 s, shows times relative and in the visitor's
-  time zone, and has a light/dark/auto theme switch. Each incident has its own page.
-- **Public JSON API** (`/api/v1`) and an **Atom feed** (`/feed.atom`), readable from
-  any site (CORS).
-- **Admin**: manage services and incidents, with a Markdown editor and a comment-style
-  box for status updates. Protected by
-  [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/);
-  the app has no login code of its own.
+- **Status page:** the overall status as the headline on a background in its colour,
+  then services, current and scheduled incidents, and past incidents by month with
+  infinite scroll. Refreshes itself, shows local times, light and dark themes.
+- **Admin:** incidents and maintenance with status updates, a Markdown editor,
+  drag-and-drop services, and an activity log. Sign-in is
+  [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/).
+- **Free at any traffic:** the public site, API and feed are static files in R2,
+  served from Cloudflare's cache, so visitors never touch the Workers or D1 limits.
+  The Worker serves only the admin and publishes the site after each change (and
+  every minute, for maintenance windows that start or end on their own).
 
-### Free at any traffic
+**How status works:** an incident has an impact (`maintenance`, `minor_outage` or
+`major_outage`) and a start and end time; whether it's upcoming, active or ended
+follows from those. A service's status is the worst impact among the active incidents
+affecting it. Posting an "Ended" update ends an incident.
 
-The public site is **static files** in an R2 bucket, served from Cloudflare's cache.
-Visitors never run the Worker, so a big outage with thousands of people watching the
-page doesn't touch the Workers or D1 free-tier limits. The Worker serves only the
-admin, on its own hostname, and publishes the site:
+**API:** the public JSON API (`/api/v1/…`, readable from any site) and the admin API
+are described in [docs/openapi.yaml](docs/openapi.yaml).
 
-- each admin change re-renders the affected pages right away;
-- a cron job every minute renders anything left over, the start and end of scheduled
-  maintenance, and the whole site after a deploy.
+## Deploying your own
 
-Pages are cached at the edge for 30 seconds, so changes show up within about half a
-minute.
+You need a Cloudflare account with your domain on it. Run this from your own machine,
+not from the devcontainer (which should never hold a Cloudflare token).
 
-## How status works
+1. **Once, in the Cloudflare dashboard:**
+   - **R2** (storage for the public site): open R2 in the sidebar and enable it. It
+     may ask for a payment method; the status page stays within the free tier.
+   - **Zero Trust** (the admin's sign-in, via Cloudflare Access):
+     - **Already have a team?** Nothing to do. The setup adds one application for
+       the admin and leaves your other applications and login methods alone.
+     - **Otherwise:** go to [one.dash.cloudflare.com](https://one.dash.cloudflare.com/),
+       pick your account, choose a team name (your sign-in page becomes
+       `<team>.cloudflareaccess.com`) and the **Free** plan (up to 50 users; it may
+       ask for a payment method, but costs nothing).
+     - The setup does the rest: the admin's application, who may sign in, and
+       one-time codes by email if the team has no login method yet.
+2. **Create an API token:** [open the token form with the permissions filled in](https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22d1%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22workers_r2%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access_acct%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22dns%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22workers_routes%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22zone_transform_rules%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22transform_rules%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22cache_rules%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22cache_settings%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22user_details%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22memberships%22%2C%22type%22%3A%22read%22%7D%5D&accountId=*&zoneId=all&name=simple-status%20setup),
+   then check it against the list below and add any that are missing. You can narrow
+   "Zone Resources" to your domain. (Or by hand: My Profile → API Tokens → Create
+   Token → Create Custom Token.) Copy the token when it's shown: it's shown once.
 
-An incident has an `impact`: `maintenance`, `minor_outage` or `major_outage`.
-Planned maintenance is just an incident with impact `maintenance`. There is no
-status field to keep in sync. Whether an incident is `upcoming`, `active` or `ended`
-follows from `starts_at` and `ends_at`, so maintenance windows start and end on
-their own, and resolving an incident means setting `ends_at`.
+   | Group   | Permission                                            | Access |
+   | ------- | ----------------------------------------------------- | ------ |
+   | Account | Workers Scripts                                       | Edit   |
+   | Account | D1                                                    | Edit   |
+   | Account | Workers R2 Storage                                    | Edit   |
+   | Account | Access: Apps and Policies                             | Edit   |
+   | Account | Access: Organizations, Identity Providers, and Groups | Edit   |
+   | Account | Account Settings                                      | Read   |
+   | Zone    | Zone                                                  | Read   |
+   | Zone    | DNS                                                   | Edit   |
+   | Zone    | Workers Routes                                        | Edit   |
+   | Zone    | Transform Rules                                       | Edit   |
+   | Zone    | Cache Rules                                           | Edit   |
+   | User    | User Details                                          | Read   |
+   | User    | Memberships                                           | Read   |
 
-Each incident has its own timeline, newest first: **Ended** (its end time, with the
-message of the "Ended" update if there is one) or the **Expected end** of maintenance,
-the **updates** admins post (**Identified**, **Monitoring**, **Update**), and
-**Started** (its start time and description). Posting an **Ended** update ends an
-incident; its message is optional. Deleting an outage's Ended update reopens it.
-Incidents in the API include their `updates`, newest first.
+3. **Run the setup:**
 
-A service's status is the worst impact among the active incidents affecting it, or
-`operational`. The banner shows the worst service status.
+   ```sh
+   npm ci
+   CLOUDFLARE_API_TOKEN=… npm run setup
+   ```
 
-## API
+   It asks for the status page's address (e.g. `status.example.com`), the admin's
+   (e.g. `admin.status.example.com`), the site name and the admins' emails. Then it
+   creates the database and storage, connects the address, sets up caching, security
+   headers and the admin's sign-in, and deploys. `--dry-run` shows what it would do.
+   It's safe to run again (e.g. with `--admins a@example.com,b@example.com`), and
+   leaves anything else on your domain alone. You can delete the token afterwards.
 
-### Public (static JSON)
+The admin is then at `https://admin.status.example.com/admin`. Opening it shows
+Cloudflare's sign-in page: an admin enters their email and gets a code to type in.
+Only the emails you gave are let in. To change them, run the setup again with
+`--admins`, or edit the "simple-status admins" policy in Zero Trust → Access →
+Applications.
 
-| Path                               |                                                                                                    |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `/api/v1/summary`                  | Summary in one request: overall status, services with their status, active and scheduled incidents |
-| `/api/v1/services`                 | Services, in display order, with their status                                                      |
-| `/api/v1/incidents/active`         | Incidents going on now                                                                             |
-| `/api/v1/incidents/scheduled`      | Upcoming incidents and maintenance, soonest first                                                  |
-| `/api/v1/incidents/past`           | The first page of past incidents (see below)                                                       |
-| `/api/v1/incidents/past/{YYYY-MM}` | Ended incidents that started that month (UTC), newest first                                        |
-| `/api/v1/incidents/{id}`           | One incident, with its `state`, `service_ids` and `updates`                                        |
-| `/feed.atom`                       | Atom feed of the most recently changed incidents                                                   |
+**Adding or removing admins:** whoever Access lets in is an admin. Either run the
+setup again with the complete list (`--admins` replaces it):
+`CLOUDFLARE_API_TOKEN=… npm run setup -- --admins a@example.com,b@example.com`. Or in
+the dashboard: Zero Trust → Access → Applications → your "… admin" application →
+Policies → "simple-status admins" → add or remove emails in the Include rule → Save.
 
-**Pagination:** past incidents come a month per page, as
-`{ month, incidents, next }`. `next` is the URL of the next older page (the latest
-earlier month with incidents), or `null` on the last page; months without incidents
-are skipped. The API is static files, so there are no query parameters: each page is
-its own file and only changes when that month does, which keeps it cacheable.
+**Afterwards:** `npx wrangler login` once, then `npm run deploy` for updates. (The
+first deploy has to be the setup's: it's the one that sets the two Access secrets.)
 
-Times are ISO 8601 UTC. Responses allow any origin (CORS), so other sites can show
-your status.
+**Your settings** (database id, addresses, name) are in `wrangler.site.jsonc`, which
+git ignores, like `.env.local`: it's merged over the defaults in `wrangler.jsonc`. A
+logo goes there too: `"SITE_LOGO": "site/logo.svg"`, and optionally `SITE_LOGO_DARK`,
+with the files under `public/site/` (also ignored). For Wrangler commands of your own,
+run `npm run site-config` and add `-c wrangler.site.json`.
 
-### Admin
+## Importing from Server Status v2
 
-Errors are `application/problem+json`
-([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)); validation errors list each
-problem in `errors`. Any time offset is accepted on input.
+```sh
+mysqldump --no-tablespaces -u USER -p DATABASE > v2.dump.sql    # on the v2 server
+node scripts/import-v2.mjs v2.dump.sql > import.sql              # prints a report
+npm run site-config
+npx wrangler d1 execute DB --remote --file=import.sql -c wrangler.site.json
+```
 
-| Method | Path                                              |                                                                                                                                                                         |
-| ------ | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/admin/api/v1/services`                          | `{ name, description?, position? }`. New services go last.                                                                                                              |
-| PATCH  | `/admin/api/v1/services/{id}`                     | Any of the fields above                                                                                                                                                 |
-| DELETE | `/admin/api/v1/services/{id}`                     | 409 while incidents refer to the service                                                                                                                                |
-| PUT    | `/admin/api/v1/services/order`                    | `{ ids }`: every service id once, in the new order                                                                                                                      |
-| POST   | `/admin/api/v1/incidents`                         | `{ title, impact, service_ids, body?, starts_at?, ends_at? }`. `starts_at` defaults to now. Maintenance needs `ends_at`; an outage's `ends_at` can only be in the past. |
-| PATCH  | `/admin/api/v1/incidents/{id}`                    | Any of the fields above. Changing maintenance into an outage drops its planned end.                                                                                     |
-| DELETE | `/admin/api/v1/incidents/{id}`                    |                                                                                                                                                                         |
-| POST   | `/admin/api/v1/incidents/{id}/updates`            | `{ status, body }`: `identified`, `monitoring` or `update` with a message, or `ended` (message optional), which ends the incident now. Not before it has started.       |
-| DELETE | `/admin/api/v1/incidents/{id}/updates/{updateId}` |                                                                                                                                                                         |
-| POST   | `/admin/api/v1/publish`                           | `{}`: re-render the whole public site                                                                                                                                   |
-| POST   | `/admin/api/v1/preview`                           | `{ body }`: Markdown rendered as on the public site, `{ html }`                                                                                                         |
+Import into an empty database (try `--local` first). The site republishes within
+minutes; the admin dashboard shows the progress. How v2's data is converted:
+[docs/import-v2.md](docs/import-v2.md).
 
-The full API is described in [docs/openapi.yaml](docs/openapi.yaml) (OpenAPI 3.1).
+## Backups and starting over
 
-Admin requests need a Cloudflare Access token. Writes must be
-`Content-Type: application/json`, and requests from another `Origin` are refused.
-Scripts can use an
-[Access service token](https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/).
+```sh
+npm run site-config
+npx wrangler d1 export simple-status --remote --output backup.sql -c wrangler.site.json
+npx wrangler d1 execute DB --remote --file=scripts/wipe.sql -c wrangler.site.json   # empties it
+```
+
+`scripts/wipe.sql` deletes all data but keeps the tables (use `--local` for your local
+database). D1's Time Travel can also restore an earlier point.
 
 ## Development
 
@@ -105,144 +125,18 @@ Requires Node.js 26 (see `.nvmrc`).
 
 ```sh
 npm ci
-cp .dev.vars.example .dev.vars   # disables Access, for localhost only
-npm run db:migrate               # local D1, empty
-npm run dev                      # http://localhost:8787: the site, admin at /admin
-
-npm run demo:setup               # or: a separate local database with example data
-npm run demo                     # the same, on that database
-npm run check                    # typecheck, lint, format check, tests
+cp .dev.vars.example .dev.vars   # local admin without Access (localhost only)
+npm run db:migrate
+npm run dev                      # http://localhost:8787, admin at /admin
+npm run demo:setup && npm run demo   # or: a separate database with example data
+npm run check                    # typecheck, lint, format, tests
 ```
 
-Locally there is no cron job, so the preview of the site at `/` publishes pending
-pages on each request.
+Locally there's no cron job: the site at `/` publishes pending pages on each request.
 
-`worker-configuration.d.ts` is generated by `npm run cf-typegen` (also run by
-`npm run typecheck`) and is not committed. Re-run it after changing
-`wrangler.jsonc`.
+Code: `src/status.ts` (status rules), `src/db.ts` (SQL), `src/admin-api.ts`,
+`src/publish.tsx` (renders the site to R2), `src/pages/` (HTML), `public/static/`
+(CSS and small scripts), `migrations/`, `scripts/` (setup, import, config).
 
-Layout: `src/status.ts` (status rules), `src/db.ts` (SQL), `src/schemas.ts`
-(validation), `src/admin-api.ts` (admin API), `src/publish.tsx` (renders the site to
-R2), `src/feed.ts`, `src/access.ts` (Access JWT check), `src/pages/` (HTML),
-`public/static/` (CSS and the small scripts), `migrations/` (D1 schema).
-
-## Deploying your own
-
-Deploy from your own machine or CI, not from the devcontainer sandbox. Its firewall
-blocks the Cloudflare API on purpose, and it should never hold a Cloudflare token.
-
-**Your settings stay out of the repository**, like `.env.local` in other projects:
-`wrangler.jsonc` holds the defaults, and `wrangler.site.jsonc` (ignored by git) holds
-yours: database id, admin hostname, name, logo. `npm run deploy` merges the two into
-`wrangler.site.json` and deploys with that. Start from the example:
-`cp wrangler.site.example.jsonc wrangler.site.jsonc`. For other Wrangler commands on
-your site, run `npm run site-config` once, then add `-c wrangler.site.json`, as below.
-The local commands (`npm run dev`, `db:migrate`, `demo`) use your settings too.
-
-You need a domain on Cloudflare. The examples use `status.example.com` for the public
-site and `admin.status.example.com` for the admin. Cloudflare's dashboard changes
-from time to time, so check the linked docs if a step doesn't match.
-
-1. `npx wrangler login`
-2. **Database:** `npx wrangler d1 create simple-status`, then put the printed
-   `database_id` in `wrangler.site.jsonc`.
-3. **Bucket:** `npx wrangler r2 bucket create simple-status-site`. (Enabling R2 may
-   ask for a payment method, even though this stays within the free tier.)
-4. **Public hostname**, in the Cloudflare dashboard:
-   - R2 → `simple-status-site` → Settings → Custom Domains: connect
-     `status.example.com`.
-   - Rules → URL Rewrite: when the hostname is `status.example.com` and the path
-     equals `/`, rewrite the path to `/index.html`.
-   - Rules → Cache Rules: for `status.example.com`, "Eligible for cache", with Edge
-     TTL "Use cache-control header". (By default HTML and JSON aren't cached.)
-   - Rules → Response Header Transform: for `status.example.com`, set
-     `Strict-Transport-Security: max-age=63072000; includeSubDomains`,
-     `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
-     `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`.
-   - CORS for the JSON API and feed:
-     `npx wrangler r2 bucket cors set simple-status-site --file r2-cors.json`.
-5. **Admin hostname:** add it to `wrangler.site.jsonc`:
-   `"routes": [{ "pattern": "admin.status.example.com", "custom_domain": true }]`.
-   The `workers.dev` and preview URLs are switched off, so this is the only way in.
-6. **Access:** in Cloudflare Zero Trust, create a self-hosted Access application for
-   all of `admin.status.example.com`, with a policy for who may sign in.
-7. In `wrangler.site.jsonc`, set `SITE_NAME` (shown at the top of the page),
-   optionally a logo to show next to it (`SITE_LOGO`, plus `SITE_LOGO_DARK` for dark
-   mode: files under `public/site/`, which git ignores, e.g. `site/logo.svg`), and
-   `SITE_URL` (`https://status.example.com`, for the feed).
-8. `npm run site-config`, then set the two secrets:
-   - `npx wrangler secret put ACCESS_TEAM_DOMAIN -c wrangler.site.json`: for example
-     `myteam.cloudflareaccess.com`.
-   - `npx wrangler secret put ACCESS_AUD -c wrangler.site.json`: the application's
-     "Application Audience (AUD) Tag".
-9. `npm run deploy`. This applies pending migrations, then deploys. Within a minute
-   the cron job publishes the whole site (or use **Republish site** on the dashboard).
-
-Until both secrets are set, the admin answers 503. Back up the database with
-`npx wrangler d1 export simple-status --remote --output backup.sql -c wrangler.site.json`; D1's Time Travel
-can also restore it to an earlier point (the last 7 days on the free plan).
-
-**Free-tier use:** the cron job runs 1,440 times a day plus your admin use, far below
-the Workers and D1 daily limits; public traffic doesn't count. R2 storage is a few
-megabytes. Check Cloudflare's current pricing pages for the exact limits.
-
-## Starting over
-
-To empty a database but keep its tables, for example before importing again:
-
-```sh
-npx wrangler d1 execute DB --local --file=scripts/wipe.sql     # local
-npm run site-config                                            # production: your settings
-npx wrangler d1 export simple-status --remote --output backup.sql -c wrangler.site.json
-npx wrangler d1 execute DB --remote --file=scripts/wipe.sql -c wrangler.site.json
-```
-
-Locally you can also delete everything, including the local copy of the published
-site, and start from scratch: `rm -rf .wrangler/state && npm run db:migrate`. (The
-demo database is separate: `npm run demo:setup` resets it.)
-
-After a wipe, the site is republished from the now-empty database within a minute.
-Pages of deleted incidents stay in the bucket but are no longer linked; an import
-with the same ids overwrites them.
-
-## Moving from Server Status v2
-
-`scripts/import-v2.mjs` converts a v2 database into SQL for this one. It reads a
-`mysqldump` of the v2 MySQL database:
-
-```sh
-mysqldump --no-tablespaces -u USER -p DATABASE > v2.dump.sql   # on the v2 server
-node scripts/import-v2.mjs v2.dump.sql > import.sql             # prints a report
-npx wrangler d1 execute DB --local --file=import.sql            # try it locally first
-npm run site-config && npx wrangler d1 execute DB --remote --file=import.sql -c wrangler.site.json
-```
-
-Import into an empty database (see [Starting over](#starting-over) to empty one). The
-ids are stable, so importing twice fails instead of duplicating anything. The cron job publishes the imported history within a minute.
-Both files hold your users' data: keep them out of the repository (`.gitignore` covers
-`*.dump.sql` and `import*.sql`) and delete them afterwards.
-
-How v2's data maps:
-
-- **Services** keep v2's order (by group, then name). Groups aren't supported.
-- **Incidents without services** (old installs have some) get every service that
-  existed at the time, inferred from the ids: v2 doesn't record when a service was
-  created.
-- **Outages** in v2 had no end time: one stayed in effect for a service until a newer
-  post for that service, usually an "Operational" one. An imported outage ends when
-  all its services have had such a post. One that never did stays ongoing, as it was
-  on the v2 page, and the report lists it so you can end it in the admin.
-- **"Operational" posts** become updates on the outages they ended: **Ended** on the
-  one they finished, **Update** where they recovered only some of the services.
-- **Maintenance** keeps its window.
-- **Authors** go into the activity log, as "alice (v2)".
-- **Not imported:** staff accounts (sign-in is Cloudflare Access now), subscribers,
-  queued notifications and settings. The report tells you v2's site name, for
-  `SITE_NAME`.
-
-## Docs
-
-- [Design and scope](docs/considerations.md)
-- [Plan: architecture, data model, API, milestones](docs/plan.md)
-- [Hosting and auth](docs/hosting.md)
-- [v2 reference](docs/v2/)
+More: [plan](docs/plan.md), [hosting](docs/hosting.md),
+[design and scope](docs/considerations.md), [v2 reference](docs/v2/).

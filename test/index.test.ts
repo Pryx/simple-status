@@ -37,9 +37,11 @@ describe("unknown routes", () => {
     expect(res.headers.get("content-type")).toBe("application/problem+json");
   });
 
-  it("returns 404 for unpublished paths", async () => {
-    const res = await get("/nothing-here");
-    expect(res.status).toBe(404);
-    expect(res.headers.get("content-type")).toMatch(/^text\/plain/);
+  it("returns 404 for unpublished paths, with a way to the admin", async () => {
+    for (const path of ["/nothing-here", "/admin/nothing-here"]) {
+      const res = await get(path);
+      expect(res.status, path).toBe(404);
+      expect(await res.text(), path).toContain('<a href="/admin">Go to the admin</a>');
+    }
   });
 });

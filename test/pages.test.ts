@@ -43,6 +43,7 @@ describe("public pages", () => {
     expect(html).toContain("Login broken");
     expect(html).toContain("Upgrade");
     expect(html).toContain("Old outage");
+    expect(html).toContain('<a class="feed-link" href="/feed.atom"');
   });
 
   it("renders Markdown safely", async () => {
